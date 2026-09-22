@@ -50,6 +50,7 @@ import {
   findHistoricalMetricDeclines,
 } from "./ask-aria-historical";
 import {
+  buildActiveAnalysisContext,
   buildPeriodTransparencySection,
   extractPlatformIdsFromText,
   resolveQueryScope,
@@ -213,6 +214,10 @@ function resolveFocusMetric(
   if (lower.includes("gross sales")) return "gross_sales";
   if (lower.includes("orders")) return "orders";
   if (lower.includes("acos")) return "acos";
+  if (memory.activeAnalysisContext?.metricId) {
+    return memory.activeAnalysisContext.metricId;
+  }
+  if (memory.lastMetric) return memory.lastMetric;
   if (memory.metricId) return memory.metricId;
   return context.platform === "all"
     ? context.consolidatedChartMetric
@@ -446,7 +451,100 @@ function buildInsightMessage(
       lastMetric: metricId,
       lastPlatform: activePlatform,
       lastTopic: "metric_change",
+      activeAnalysisContext: buildActiveAnalysisContext(
+        context,
+        scope,
+        metricId,
+        primary.direction,
+      ),
     },
+  };
+}
+
+function rankProductsForInvestigation(
+  current: ReturnType<typeof filterForScope>["current"],
+  comparison: ReturnType<typeof filterForScope>["comparison"],
+  metricId: MetricId,
+  investigationDirection?: "up" | "down" | "flat",
+  limit = 8,
+): {
+  rows: Array<{
+    productId: string;
+    platformId: PlatformId;
+    pct: number;
+    metricPct: number;
+  }>;
+  productLevelCausality: boolean;
+} {
+  const productIds = new Set<string>();
+  for (const record of current) productIds.add(record.productId);
+  for (const record of comparison) productIds.add(record.productId);
+
+  const rows = [...productIds].map((productId) => {
+    const curRecords = current.filter((r) => r.productId === productId);
+    const prevRecords = comparison.filter((r) => r.productId === productId);
+    const aggregation = getMetricAggregationType(metricId);
+    const curMetric = aggregateMetric(curRecords, metricId, aggregation);
+    const prevMetric = aggregateMetric(prevRecords, metricId, aggregation);
+    const metricPct = calculatePercentageChange(curMetric, prevMetric);
+    const curRev = aggregateMetric(curRecords, "revenue", "sum");
+    const prevRev = aggregateMetric(prevRecords, "revenue", "sum");
+    const revenuePct = calculatePercentageChange(curRev, prevRev);
+    const platformId =
+      curRecords[0]?.platformId ?? prevRecords[0]?.platformId ?? "amazon";
+    return { productId, platformId, metricPct, revenuePct };
+  });
+
+  const useMetricRanking =
+    metricId === "roas" ||
+    metricId === "acos" ||
+    metricId === "conversion_rate";
+
+  if (useMetricRanking && investigationDirection === "down") {
+    const worse = rows
+      .filter((row) =>
+        metricId === "acos" ? row.metricPct >= 0 : row.metricPct <= 0,
+      )
+      .sort((a, b) =>
+        metricId === "acos" ? b.metricPct - a.metricPct : a.metricPct - b.metricPct,
+      );
+    if (worse.length > 0) {
+      return {
+        productLevelCausality: true,
+        rows: worse.slice(0, limit).map((row) => ({
+          productId: row.productId,
+          platformId: row.platformId,
+          pct: row.metricPct,
+          metricPct: row.metricPct,
+        })),
+      };
+    }
+    const byMovement = [...rows].sort((a, b) =>
+      metricId === "acos" ? b.metricPct - a.metricPct : a.metricPct - b.metricPct,
+    );
+    return {
+      productLevelCausality: false,
+      rows: byMovement.slice(0, limit).map((row) => ({
+        productId: row.productId,
+        platformId: row.platformId,
+        pct: row.metricPct,
+        metricPct: row.metricPct,
+      })),
+    };
+  }
+
+  const byRevenue = [...rows]
+    .sort((a, b) => a.revenuePct - b.revenuePct)
+    .slice(0, limit);
+
+  return {
+    productLevelCausality: true,
+    rows: byRevenue.map((row) => ({
+      productId: row.productId,
+      platformId: row.platformId,
+      pct: row.revenuePct,
+      metricPct: row.metricPct,
+    })),
   };
 }
 
@@ -455,21 +553,19 @@ function buildProductsFollowUp(
   metricId: MetricId,
   role: UserRole,
   scope: ResolvedQueryScope,
+  investigation?: Pick<
+    import("./ask-aria-types").AskAriaActiveAnalysisContext,
+    "metricDirection"
+  >,
 ): AskAriaMessage {
   const { current, comparison } = filterForScope(context, scope);
-  const ranked = rankProducts(current, 8);
-  const declining = ranked
-    .map((row) => {
-      const prevRecords = comparison.filter(
-        (r) => r.productId === row.productId,
-      );
-      const curRev = row.revenue;
-      const prevRev = aggregateMetric(prevRecords, "revenue", "sum");
-      const pct = calculatePercentageChange(curRev, prevRev);
-      return { ...row, pct };
-    })
-    .sort((a, b) => a.pct - b.pct)
-    .slice(0, 8);
+  const { rows: declining, productLevelCausality } = rankProductsForInvestigation(
+    current,
+    comparison,
+    metricId,
+    investigation?.metricDirection,
+    8,
+  );
 
   const formatted = formatProductsFollowUp(
     role,
@@ -479,9 +575,16 @@ function buildProductsFollowUp(
       platformId: row.platformId,
       pct: row.pct,
     })),
+    {
+      scopeLabel: scope.scopeLabel,
+      metricId,
+      productLevelCausality,
+      investigationDirection: investigation?.metricDirection,
+    },
   );
 
   const top = declining[0];
+  const sectionHeading = formatted.sectionHeading ?? "Products to investigate";
 
   return {
     id: createMessageId(),
@@ -489,7 +592,7 @@ function buildProductsFollowUp(
     title: formatted.title,
     summary: `${formatted.summary} Scope: ${scope.scopeLabel}.`,
     sections: prependAnalysisSections(context, scope, [
-      insightSection("contributors", "Contributors", formatted.lines),
+      insightSection("contributors", sectionHeading, formatted.lines),
     ]),
     handoffs: top
       ? [
@@ -1387,12 +1490,33 @@ export function processAskAriaMessage(
   }
 
   if (intent === "product_analysis") {
-    const followMetric = memory.lastMetric ?? memory.metricId ?? metricId;
+    const followMetric =
+      memory.activeAnalysisContext?.metricId ??
+      memory.lastMetric ??
+      memory.metricId ??
+      metricId;
     const productScope = resolveQueryScope(trimmed, memory, context, intent);
+    const investigationContext =
+      memory.activeAnalysisContext ??
+      (memory.lastMetric || memory.metricId
+        ? {
+            metricId: followMetric,
+            metricDirection: undefined,
+            scopeLabel: productScope.scopeLabel,
+            dateRange: context.dateRange,
+            comparisonPeriod: context.comparisonPeriod,
+          }
+        : undefined);
     return {
       messages: [
         userMessage,
-        buildProductsFollowUp(context, followMetric, role, productScope),
+        buildProductsFollowUp(
+          context,
+          followMetric,
+          role,
+          productScope,
+          investigationContext,
+        ),
       ],
       memory: {
         ...memory,
@@ -1402,6 +1526,12 @@ export function processAskAriaMessage(
         lastTopic: "metric_change",
         lastPlatform: memoryPlatformFromScope(productScope, context),
         platformId: memoryPlatformFromScope(productScope, context),
+        activeAnalysisContext: buildActiveAnalysisContext(
+          context,
+          productScope,
+          followMetric,
+          memory.activeAnalysisContext?.metricDirection,
+        ),
       },
     };
   }

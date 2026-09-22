@@ -6,9 +6,11 @@ import type { PlatformId } from "@/types/analytics";
 import type { AskAriaIntent } from "./ask-aria-intent";
 import { isFollowUpReference } from "./ask-aria-intent";
 import type {
+  AskAriaActiveAnalysisContext,
   AskAriaFullContext,
   AskAriaInvestigationMemory,
 } from "./ask-aria-types";
+import { hasActiveInvestigation } from "./ask-aria-intent";
 
 const REGISTRY_PLATFORM_IDS = PLATFORMS.map((platform) => platform.id);
 
@@ -45,6 +47,79 @@ function formatRangeLabel(range: { start: string; end: string }): string {
       year: "numeric",
     });
   return `${format(range.start)} → ${format(range.end)}`;
+}
+
+export function buildActiveAnalysisContext(
+  context: AskAriaFullContext,
+  scope: ResolvedQueryScope,
+  metricId: import("@/types/analytics").MetricId,
+  metricDirection?: "up" | "down" | "flat",
+): AskAriaActiveAnalysisContext {
+  const platformId =
+    scope.mode === "single_platform" && scope.platformIds.length === 1
+      ? scope.platformIds[0]
+      : scope.platformIds.length > 1
+        ? "all"
+        : context.platform;
+
+  return {
+    metricId,
+    platformId,
+    platformIds: scope.platformIds.length > 0 ? scope.platformIds : undefined,
+    scopeLabel: scope.scopeLabel,
+    scopeMode: scope.mode,
+    dateRange: context.dateRange,
+    comparisonPeriod: context.comparisonPeriod,
+    metricDirection,
+  };
+}
+
+export function platformIdFromScopeLabel(label: string): PlatformId | undefined {
+  const normalized = label.trim().toLowerCase();
+  if (!normalized || normalized.includes("all platforms")) return undefined;
+  if (normalized.includes(",")) return undefined;
+  for (const platform of PLATFORMS) {
+    if (platform.name.toLowerCase() === normalized) {
+      return platform.id;
+    }
+  }
+  return undefined;
+}
+
+function inheritsInvestigationScope(
+  text: string,
+  intent: AskAriaIntent,
+): boolean {
+  if (intent === "product_analysis") return true;
+  if (intent === "metric_follow_up" || intent === "temporal_follow_up") {
+    return true;
+  }
+  if (intent === "historical_pattern" || intent === "recommendation") {
+    return true;
+  }
+  if (intent === "root_cause" && isFollowUpReference(text)) return true;
+  return isFollowUpReference(text);
+}
+
+function inheritedPlatformIds(
+  text: string,
+  memory: AskAriaInvestigationMemory,
+  intent: AskAriaIntent,
+): PlatformId[] | null {
+  if (extractPlatformIdsFromText(text).length > 0) return null;
+  if (isWorkspacePlatformQuestion(text)) return null;
+  if (intent === "brand_analysis" || intent === "platform_analysis") {
+    return null;
+  }
+  if (!hasActiveInvestigation(memory)) return null;
+  if (!inheritsInvestigationScope(text, intent)) return null;
+
+  const ctx = memory.activeAnalysisContext;
+  if (ctx?.platformIds?.length) return ctx.platformIds;
+  const single =
+    ctx?.platformId ?? memory.lastPlatform ?? memory.platformId ?? undefined;
+  if (single && single !== "all") return [single];
+  return null;
 }
 
 export function buildPeriodTransparencySection(
@@ -180,6 +255,24 @@ export function resolveQueryScope(
       mode: "single_platform",
       platformIds: explicit,
       scopeLabel: labelForPlatforms(explicit),
+      usedDashboardDefault: false,
+    };
+  }
+
+  const inherited = inheritedPlatformIds(text, memory, intent);
+  if (inherited?.length) {
+    const mode =
+      inherited.length === 1
+        ? "single_platform"
+        : inherited.length === REGISTRY_PLATFORM_IDS.length
+          ? "workspace_platforms"
+          : "multi_platform";
+    return {
+      mode,
+      platformIds: inherited,
+      scopeLabel:
+        memory.activeAnalysisContext?.scopeLabel ??
+        labelForPlatforms(inherited),
       usedDashboardDefault: false,
     };
   }

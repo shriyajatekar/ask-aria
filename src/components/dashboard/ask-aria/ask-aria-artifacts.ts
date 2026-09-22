@@ -78,11 +78,17 @@ export function extractThreadAnalysisContext(
       const platformLine = message.kind === "insight"
         ? message.sections.find((s) => s.id === "scope")?.lines[0]
         : undefined;
+      const platformLabel =
+        memory.activeAnalysisContext?.scopeLabel ??
+        platformLine?.replace(/^Analyzed:\s*/i, "");
       return {
         hasInsight: true,
         lastInsightTitle: message.title,
-        metricId: memory.lastMetric ?? memory.metricId,
-        platformLabel: platformLine?.replace(/^Analyzed:\s*/i, ""),
+        metricId:
+          memory.activeAnalysisContext?.metricId ??
+          memory.lastMetric ??
+          memory.metricId,
+        platformLabel,
       };
     }
   }

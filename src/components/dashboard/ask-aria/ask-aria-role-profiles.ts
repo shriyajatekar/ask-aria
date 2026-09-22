@@ -479,6 +479,13 @@ export function formatRecommendationFromEvidence(
   };
 }
 
+export interface ProductsFollowUpFormatOptions {
+  scopeLabel: string;
+  metricId: MetricId;
+  productLevelCausality: boolean;
+  investigationDirection?: "up" | "down" | "flat";
+}
+
 export function formatProductsFollowUp(
   role: UserRole,
   metricLabel: string,
@@ -487,9 +494,27 @@ export function formatProductsFollowUp(
     platformId: PlatformId;
     pct: number;
   }>,
-): { title: string; summary: string; lines: string[] } {
+  options?: ProductsFollowUpFormatOptions,
+): {
+  title: string;
+  summary: string;
+  lines: string[];
+  sectionHeading?: string;
+} {
   const profile = getRoleProfile(role);
   const limited = rows.slice(0, profile.productListLimit);
+  const scopeLabel = options?.scopeLabel ?? "this scope";
+  const metricId = options?.metricId;
+  const useMetricLines =
+    metricId === "roas" ||
+    metricId === "acos" ||
+    metricId === "conversion_rate";
+  const valueLabel = useMetricLines ? metricLabel : "revenue";
+  const honestMovement =
+    options &&
+    !options.productLevelCausality &&
+    options.investigationDirection === "down" &&
+    useMetricLines;
 
   if (role === "CXO") {
     const top = limited[0];
@@ -497,11 +522,14 @@ export function formatProductsFollowUp(
       ? PRODUCT_BY_ID[top.productId]?.name ?? top.productId
       : "priority SKU";
     return {
-      title: "Product contribution (summary)",
-      summary: `${rows.length} product${rows.length === 1 ? "" : "s"} show material movement related to ${metricLabel}. The largest contributor is ${topName}.`,
+      title: "Product movement (summary)",
+      sectionHeading: "Products to investigate",
+      summary: honestMovement
+        ? `No SKU-level ${metricLabel} decline is clear in ${scopeLabel}; ${topName} shows the largest ${metricLabel} movement in scope.`
+        : `${rows.length} product${rows.length === 1 ? "" : "s"} with notable ${valueLabel} movement in ${scopeLabel}.`,
       lines: top
         ? [
-            `${topName}: revenue ${formatPct(top.pct)} vs comparison period (largest single contributor).`,
+            `${topName}: ${valueLabel} ${formatPct(top.pct)} vs comparison period (largest movement in scope).`,
             "Ask for a detailed product list if you need SKU-level evidence for your team.",
           ]
         : ["No product-level variance found in the current filters."],
@@ -510,26 +538,32 @@ export function formatProductsFollowUp(
 
   if (role === "KAM") {
     return {
-      title: "Products affecting account performance",
-      summary: `These products show the largest revenue movement related to ${metricLabel} in the current investigation.`,
+      title: "Products to investigate",
+      sectionHeading: "Products to investigate",
+      summary: honestMovement
+        ? `Product-level ${metricLabel} does not clearly explain the account move; these SKUs show the largest ${metricLabel} movement within ${scopeLabel}.`
+        : `Largest ${valueLabel} movement related to ${metricLabel} within ${scopeLabel}.`,
       lines: limited.length
         ? limited.map((row) => {
             const name = PRODUCT_BY_ID[row.productId]?.name ?? row.productId;
             const platform =
               PLATFORM_BY_ID[row.platformId]?.name ?? row.platformId;
-            return `${name} (${platform}): revenue ${formatPct(row.pct)} vs comparison period`;
+            return `${name} (${platform}): ${valueLabel} ${formatPct(row.pct)} vs comparison period`;
           })
         : ["No product-level variance found in the current filters."],
     };
   }
 
   return {
-    title: "Products contributing to the change",
-    summary: `These products show the largest revenue movement in the current investigation context for ${metricLabel}.`,
+    title: honestMovement ? "Products to investigate" : "Products to investigate",
+    sectionHeading: "Products to investigate",
+    summary: honestMovement
+      ? `No clear product-level ${metricLabel} decline in ${scopeLabel}; listed SKUs show the largest ${metricLabel} movement in this scope (not necessarily the driver of the change).`
+      : `Largest ${valueLabel} movement for ${metricLabel} within ${scopeLabel}.`,
     lines: limited.length
       ? limited.map((row) => {
           const name = PRODUCT_BY_ID[row.productId]?.name ?? row.productId;
-          return `${name}: revenue ${formatPct(row.pct)} vs comparison period`;
+          return `${name}: ${valueLabel} ${formatPct(row.pct)} vs comparison period`;
         })
       : ["No product-level variance found in the current filters."],
   };

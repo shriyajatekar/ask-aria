@@ -1,5 +1,6 @@
 import { METRIC_BY_ID } from "@/data/metrics";
 import { PLATFORM_BY_ID } from "@/data/platforms";
+import { platformIdFromScopeLabel } from "./ask-aria-scope";
 import type { PlatformId } from "@/types/analytics";
 import type { UserRole } from "@/lib/auth/types";
 
@@ -92,6 +93,14 @@ function extractInsightThreadContext(
       lastUserQuestion = message.text;
     }
     if (message.kind === "insight" || message.kind === "recommendation") {
+      if (message.kind === "insight") {
+        const scopeLine = message.sections.find((s) => s.id === "scope")?.lines[0];
+        const analyzed = scopeLine?.replace(/^Analyzed:\s*/i, "").trim();
+        if (analyzed) {
+          const fromScope = platformIdFromScopeLabel(analyzed);
+          if (fromScope) platformId = fromScope;
+        }
+      }
       const platformHandoff = message.handoffs?.find((h) => h.platformId);
       if (platformHandoff?.platformId) {
         platformId = platformHandoff.platformId;

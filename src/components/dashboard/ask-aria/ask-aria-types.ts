@@ -236,6 +236,18 @@ export type AskAriaTemporalWindow =
   | "previous_week"
   | "decline_onset";
 
+/** Latest metric/platform/period investigation — inherited on follow-ups in the same thread. */
+export interface AskAriaActiveAnalysisContext {
+  metricId: MetricId;
+  platformId?: DashboardPlatform;
+  platformIds?: PlatformId[];
+  scopeLabel: string;
+  scopeMode?: "single_platform" | "multi_platform" | "workspace_platforms" | "workspace_brands";
+  dateRange: { start: string; end: string };
+  comparisonPeriod: { start: string; end: string };
+  metricDirection?: "up" | "down" | "flat";
+}
+
 export interface AskAriaInvestigationMemory {
   topic?:
     | "metric_change"
@@ -250,6 +262,7 @@ export interface AskAriaInvestigationMemory {
   lastTopic?: string;
   temporalWindow?: AskAriaTemporalWindow;
   pendingActionDraft?: AskAriaActionDraft;
+  activeAnalysisContext?: AskAriaActiveAnalysisContext;
 }
 
 export interface AskAriaConversationSnapshot {

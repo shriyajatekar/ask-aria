@@ -11,11 +11,18 @@ export function AskAriaContextualSuggestions({ visible }: { visible?: boolean })
   const view = useAskAriaDashboardView();
 
   const scopeLabel = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const message = messages[i];
+      if (message.kind !== "insight") continue;
+      const scopeLine = message.sections.find((s) => s.id === "scope")?.lines[0];
+      const analyzed = scopeLine?.replace(/^Analyzed:\s*/i, "").trim();
+      if (analyzed) return analyzed;
+    }
     if (view.platform !== "all") {
       return PLATFORM_BY_ID[view.platform]?.name ?? "this platform";
     }
     return "this scope";
-  }, [view.platform]);
+  }, [messages, view.platform]);
 
   const suggestions = useMemo(
     () => buildContextualThreadSuggestions(messages, scopeLabel, view),

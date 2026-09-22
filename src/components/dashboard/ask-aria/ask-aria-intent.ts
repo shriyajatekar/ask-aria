@@ -77,8 +77,11 @@ export function isFollowUpReference(text: string): boolean {
   );
 }
 
-function hasActiveInvestigation(memory: AskAriaInvestigationMemory): boolean {
+export function hasActiveInvestigation(
+  memory: AskAriaInvestigationMemory,
+): boolean {
   return (
+    Boolean(memory.activeAnalysisContext) ||
     memory.topic === "metric_change" ||
     memory.lastTopic === "metric_change" ||
     Boolean(memory.lastMetric || memory.metricId)
