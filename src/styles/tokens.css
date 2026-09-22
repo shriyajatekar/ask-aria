@@ -1,0 +1,135 @@
+/**
+ * Commerce Intelligence — design tokens (05D.22)
+ * Warm neutral page + sage accent. Map semantic Tailwind names from globals @theme.
+ */
+
+:root {
+  /* Page & surfaces */
+  --color-page: #f7f6f2;
+  --color-background: #f7f6f2;
+  --color-background-secondary: #eef1e9;
+  --color-background-tertiary: #e7e5de;
+
+  --color-surface: #ffffff;
+  --color-surface-hover: #faf9f6;
+  --color-surface-active: #eef1e9;
+
+  /* Text */
+  --color-text-primary: #252525;
+  --color-text-secondary: #6f6d67;
+  --color-text-tertiary: #929089;
+  --color-text-disabled: #b5b3ac;
+  --color-text-muted: #929089;
+
+  /* Border */
+  --color-border: #e7e5de;
+  --color-border-subtle: #eceae3;
+  --color-border-strong: #d8d6ce;
+
+  /* Accent (sage) */
+  --color-accent-primary: #a8b59a;
+  --color-accent-interactive: #68785d;
+  --color-accent-subtle: #eef1e9;
+
+  /* Core */
+  --color-black: #252525;
+  --color-white: #ffffff;
+
+  /* Interactive (primary actions) */
+  --color-primary: #68785d;
+  --color-primary-hover: #556450;
+
+  /* Semantic (state & analytics meaning only) */
+  --color-success: #16a34a;
+  --color-success-subtle: #f0fdf4;
+  --color-warning: #ca8a04;
+  --color-warning-subtle: #fefce8;
+  --color-error: #dc2626;
+  --color-error-subtle: #fef2f2;
+  --color-info: #2563eb;
+  --color-info-subtle: #eff6ff;
+
+  /* Chart palette */
+  --color-chart-1: #68785d;
+  --color-chart-2: #a8b59a;
+  --color-chart-3: #6f6d67;
+  --color-chart-4: #929089;
+
+  /* Spacing (4px base) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  --page-padding-desktop: 32px;
+  --section-spacing-lg: 32px;
+  --card-padding: 20px;
+  --card-padding-lg: 24px;
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* Borders (width + style helpers) */
+  --border-width: 1px;
+  --border-default: 1px solid var(--color-border);
+  --border-subtle: 1px solid var(--color-border-subtle);
+  --border-strong: 1px solid var(--color-border-strong);
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(37, 37, 37, 0.04);
+  --shadow-md: 0 4px 12px rgba(37, 37, 37, 0.06);
+
+  /* Inputs */
+  --input-height: 40px;
+  --input-border-color: var(--color-border-strong);
+  --input-radius: var(--radius-md);
+  --input-background: var(--color-white);
+  --input-placeholder: var(--color-text-disabled);
+
+  /* Focus */
+  --focus-ring-color: var(--color-accent-interactive);
+  --focus-ring: 0 0 0 2px var(--color-white), 0 0 0 4px var(--focus-ring-color);
+
+  /* Typography scale */
+  --font-size-display: 32px;
+  --line-height-display: 40px;
+  --font-weight-display: 600;
+
+  --font-size-h1: 24px;
+  --line-height-h1: 32px;
+  --font-weight-h1: 600;
+
+  --font-size-h2: 20px;
+  --line-height-h2: 28px;
+  --font-weight-h2: 600;
+
+  --font-size-h3: 16px;
+  --line-height-h3: 24px;
+  --font-weight-h3: 600;
+
+  --font-size-body: 14px;
+  --line-height-body: 20px;
+  --font-weight-body: 400;
+  --font-weight-body-medium: 500;
+
+  --font-size-small: 12px;
+  --line-height-small: 16px;
+  --font-weight-small: 400;
+  --font-weight-label: 500;
+
+  --font-size-metric: 24px;
+  --line-height-metric: 32px;
+  --font-weight-metric: 600;
+
+  --font-size-table: 13px;
+  --line-height-table: 20px;
+}
