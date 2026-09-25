@@ -484,6 +484,7 @@ export interface ProductsFollowUpFormatOptions {
   metricId: MetricId;
   productLevelCausality: boolean;
   investigationDirection?: "up" | "down" | "flat";
+  rankingDimension?: "metric" | "revenue";
 }
 
 export function formatProductsFollowUp(
@@ -509,12 +510,22 @@ export function formatProductsFollowUp(
     metricId === "roas" ||
     metricId === "acos" ||
     metricId === "conversion_rate";
-  const valueLabel = useMetricLines ? metricLabel : "revenue";
+  const rankingByRevenue =
+    options?.rankingDimension === "revenue" && useMetricLines;
+  const valueLabel = rankingByRevenue
+    ? "revenue"
+    : useMetricLines
+      ? metricLabel
+      : "revenue";
   const honestMovement =
     options &&
     !options.productLevelCausality &&
     options.investigationDirection === "down" &&
-    useMetricLines;
+    useMetricLines &&
+    !rankingByRevenue;
+  const revenueWithinInvestigationSummary = rankingByRevenue
+    ? `Products with the largest revenue movement within this ${metricLabel} investigation in ${scopeLabel}.`
+    : null;
 
   if (role === "CXO") {
     const top = limited[0];
@@ -524,9 +535,11 @@ export function formatProductsFollowUp(
     return {
       title: "Product movement (summary)",
       sectionHeading: "Products to investigate",
-      summary: honestMovement
-        ? `No SKU-level ${metricLabel} decline is clear in ${scopeLabel}; ${topName} shows the largest ${metricLabel} movement in scope.`
-        : `${rows.length} product${rows.length === 1 ? "" : "s"} with notable ${valueLabel} movement in ${scopeLabel}.`,
+      summary:
+        revenueWithinInvestigationSummary ??
+        (honestMovement
+          ? `No SKU-level ${metricLabel} decline is clear in ${scopeLabel}; ${topName} shows the largest ${metricLabel} movement in scope.`
+          : `${rows.length} product${rows.length === 1 ? "" : "s"} with notable ${valueLabel} movement in ${scopeLabel}.`),
       lines: top
         ? [
             `${topName}: ${valueLabel} ${formatPct(top.pct)} vs comparison period (largest movement in scope).`,
@@ -540,9 +553,11 @@ export function formatProductsFollowUp(
     return {
       title: "Products to investigate",
       sectionHeading: "Products to investigate",
-      summary: honestMovement
-        ? `Product-level ${metricLabel} does not clearly explain the account move; these SKUs show the largest ${metricLabel} movement within ${scopeLabel}.`
-        : `Largest ${valueLabel} movement related to ${metricLabel} within ${scopeLabel}.`,
+      summary:
+        revenueWithinInvestigationSummary ??
+        (honestMovement
+          ? `Product-level ${metricLabel} does not clearly explain the account move; these SKUs show the largest ${metricLabel} movement within ${scopeLabel}.`
+          : `Largest ${valueLabel} movement related to ${metricLabel} within ${scopeLabel}.`),
       lines: limited.length
         ? limited.map((row) => {
             const name = PRODUCT_BY_ID[row.productId]?.name ?? row.productId;
@@ -557,9 +572,11 @@ export function formatProductsFollowUp(
   return {
     title: honestMovement ? "Products to investigate" : "Products to investigate",
     sectionHeading: "Products to investigate",
-    summary: honestMovement
-      ? `No clear product-level ${metricLabel} decline in ${scopeLabel}; listed SKUs show the largest ${metricLabel} movement in this scope (not necessarily the driver of the change).`
-      : `Largest ${valueLabel} movement for ${metricLabel} within ${scopeLabel}.`,
+    summary:
+      revenueWithinInvestigationSummary ??
+      (honestMovement
+        ? `No clear product-level ${metricLabel} decline in ${scopeLabel}; listed SKUs show the largest ${metricLabel} movement in this scope (not necessarily the driver of the change).`
+        : `Largest ${valueLabel} movement for ${metricLabel} within ${scopeLabel}.`),
     lines: limited.length
       ? limited.map((row) => {
           const name = PRODUCT_BY_ID[row.productId]?.name ?? row.productId;
@@ -659,7 +676,7 @@ export function buildRolePrioritizedInsightHandoffs(
       },
       {
         label: "Draft client update",
-        prompt: "Draft an email to the KAM team with this insight",
+        prompt: "Draft a client update",
       },
       { label: "Compare key platforms", prompt: "Compare platform ROAS" },
       {

@@ -31,7 +31,10 @@ import {
 import { CAPABILITY_DISCOVERY_CHIPS } from "./ask-aria-command-center-data";
 import {
   buildActionDraft,
+  buildClientUpdateDraftPartial,
+  enrichClientUpdateDraft,
   enrichEmailDraft,
+  isClientUpdateDraftPartial,
   enrichMonitorDraft,
   enrichSpreadsheetDraft,
   parseActionRequest,
@@ -44,6 +47,7 @@ import {
   classifyIntent,
   isCapabilityDiscoveryQuery,
   isMonitorListingQuery,
+  isSendThisConfirmPhrase,
 } from "./ask-aria-intent";
 import {
   buildHistoricalSectionLines,
@@ -268,8 +272,66 @@ function buildBrandAnalysisMessage(
   };
 }
 
+function buildPlatformSummaryMessage(
+  context: AskAriaFullContext,
+  memory: AskAriaInvestigationMemory,
+  metricId: MetricId,
+  scope: ResolvedQueryScope,
+): { message: AskAriaMessage; memory: AskAriaInvestigationMemory } {
+  const { current, comparison } = filterForScope(context, scope);
+  const primary = metricDelta(current, comparison, metricId);
+  const mName = metricName(metricId);
+  const directionWord =
+    primary.direction === "down"
+      ? "declined"
+      : primary.direction === "up"
+        ? "increased"
+        : "held steady";
+  const inheritedNote =
+    memory.activeAnalysisContext &&
+    memory.activeAnalysisContext.metricId === metricId
+      ? `Continuing from your ${mName} investigation with the same comparison periods.`
+      : `Using your dashboard focus metric (${mName}) for this scope.`;
+
+  const activePlatform = memoryPlatformFromScope(scope, context);
+
+  return {
+    message: {
+      id: createMessageId(),
+      kind: "insight",
+      title: `Scope — ${scope.scopeLabel}`,
+      summary: `${scope.scopeLabel}: ${mName} ${directionWord} ${formatPct(primary.pct)} versus the comparison period. ${inheritedNote}`,
+      sections: prependAnalysisSections(context, scope, [
+        insightSection("scope_confirmation", "Scope", [
+          `Platform scope set to ${scope.scopeLabel}.`,
+          `Focus metric: ${mName} (${formatMetricValue(metricId, primary.cur)} vs comparison).`,
+          "Ask what changed, which products moved, or draft a client update from here.",
+        ]),
+      ]),
+      createdAt: Date.now(),
+    },
+    memory: {
+      ...memory,
+      topic: "metric_change",
+      metricId,
+      platformId: activePlatform,
+      lastMetric: metricId,
+      lastPlatform: activePlatform,
+      lastTopic: "platform_summary",
+      activeAnalysisContext: buildActiveAnalysisContext(
+        context,
+        scope,
+        metricId,
+        primary.direction,
+      ),
+    },
+  };
+}
+
 function buildPlatformComparisonMessage(
   context: AskAriaFullContext,
+  memory: AskAriaInvestigationMemory,
+  text: string,
   role: UserRole,
   scope: ResolvedQueryScope,
 ): AskAriaMessage {
@@ -277,10 +339,7 @@ function buildPlatformComparisonMessage(
     context,
     scope,
   );
-  const metricId =
-    context.platform === "all"
-      ? context.consolidatedChartMetric
-      : context.focusMetric;
+  const metricId = resolveFocusMetric(context, memory, text);
 
   const rows = selectedPlatforms
     .map((platformId) => {
@@ -475,6 +534,7 @@ function rankProductsForInvestigation(
     metricPct: number;
   }>;
   productLevelCausality: boolean;
+  rankingDimension: "metric" | "revenue";
 } {
   const productIds = new Set<string>();
   for (const record of current) productIds.add(record.productId);
@@ -511,6 +571,7 @@ function rankProductsForInvestigation(
     if (worse.length > 0) {
       return {
         productLevelCausality: true,
+        rankingDimension: "metric",
         rows: worse.slice(0, limit).map((row) => ({
           productId: row.productId,
           platformId: row.platformId,
@@ -524,6 +585,7 @@ function rankProductsForInvestigation(
     );
     return {
       productLevelCausality: false,
+      rankingDimension: "metric",
       rows: byMovement.slice(0, limit).map((row) => ({
         productId: row.productId,
         platformId: row.platformId,
@@ -538,7 +600,8 @@ function rankProductsForInvestigation(
     .slice(0, limit);
 
   return {
-    productLevelCausality: true,
+    productLevelCausality: !useMetricRanking,
+    rankingDimension: "revenue",
     rows: byRevenue.map((row) => ({
       productId: row.productId,
       platformId: row.platformId,
@@ -559,7 +622,11 @@ function buildProductsFollowUp(
   >,
 ): AskAriaMessage {
   const { current, comparison } = filterForScope(context, scope);
-  const { rows: declining, productLevelCausality } = rankProductsForInvestigation(
+  const {
+    rows: declining,
+    productLevelCausality,
+    rankingDimension,
+  } = rankProductsForInvestigation(
     current,
     comparison,
     metricId,
@@ -580,6 +647,7 @@ function buildProductsFollowUp(
       metricId,
       productLevelCausality,
       investigationDirection: investigation?.metricDirection,
+      rankingDimension,
     },
   );
 
@@ -1055,6 +1123,22 @@ export function processAskAriaMessage(
     };
   }
 
+  if (isSendThisConfirmPhrase(trimmed) && !memory.pendingActionDraft) {
+    return {
+      messages: [
+        userMessage,
+        {
+          id: createMessageId(),
+          kind: "assistant_text",
+          text:
+            "There is no email draft ready to send yet. Draft a client update or team email first, then say “Send this” to confirm.",
+          createdAt: Date.now(),
+        },
+      ],
+      memory,
+    };
+  }
+
   const lowerTrimmed = trimmed.toLowerCase();
   if (
     artifact &&
@@ -1171,7 +1255,7 @@ export function processAskAriaMessage(
     }
   }
 
-  const intent = classifyIntent(trimmed, memory);
+  const intent = classifyIntent(trimmed, memory, context);
   const scope = resolveQueryScope(trimmed, memory, context, intent);
   const metricId = resolveFocusMetric(context, memory, trimmed);
   const scopedPlatform = memoryPlatformFromScope(scope, context);
@@ -1215,7 +1299,10 @@ export function processAskAriaMessage(
   }
 
   if (intent === "confirm_action" && memory.pendingActionDraft) {
-    const draft = memory.pendingActionDraft;
+    let draft = memory.pendingActionDraft;
+    if (draft.type === "draft_email") {
+      draft = buildActionDraft({ ...draft, type: "send_email" });
+    }
     const permission = canConfirmAction(role, draft.type);
     if (!permission.allowed) {
       const platformName =
@@ -1304,11 +1391,18 @@ export function processAskAriaMessage(
           type: "send_email",
         };
       }
-      partial = enrichEmailDraft(partial, context, {
+      const enrichOptions = {
         artifact,
         userEmail: options?.appUserEmail,
         includeArtifact,
-      });
+        memory,
+        messages: recentMessages,
+      };
+      partial =
+        partial.emailRecipientGroupId === "client_account" ||
+        isClientUpdateDraftPartial(partial)
+          ? enrichClientUpdateDraft(partial, context, enrichOptions)
+          : enrichEmailDraft(partial, context, enrichOptions);
     }
 
     const draft = buildActionDraft(partial);
@@ -1478,13 +1572,67 @@ export function processAskAriaMessage(
     return {
       messages: [
         userMessage,
-        buildPlatformComparisonMessage(context, role, scope),
+        buildPlatformComparisonMessage(context, memory, trimmed, role, scope),
       ],
       memory: {
         topic: "metric_change",
         lastTopic: "platform_analysis",
         platformId: scopedPlatform,
         lastPlatform: scopedPlatform,
+      },
+    };
+  }
+
+  if (intent === "platform_summary") {
+    const summary = buildPlatformSummaryMessage(
+      context,
+      memory,
+      metricId,
+      scope,
+    );
+    return {
+      messages: [userMessage, summary.message],
+      memory: summary.memory,
+    };
+  }
+
+  if (intent === "client_update") {
+    let partial = buildClientUpdateDraftPartial();
+    partial = enrichClientUpdateDraft(partial, context, {
+      artifact,
+      userEmail: options?.appUserEmail,
+      includeArtifact,
+      memory,
+      messages: recentMessages,
+    });
+    const draft = buildActionDraft(partial);
+    if (
+      workspaceConnection.googleOAuthConfigured &&
+      !workspaceConnection.googleOAuthGmailConnected
+    ) {
+      return {
+        messages: [userMessage, buildGoogleGmailRequiredClarification()],
+        memory: {
+          ...memory,
+          topic: "action",
+          pendingActionDraft: draft,
+        },
+      };
+    }
+    return {
+      messages: [
+        userMessage,
+        {
+          id: createMessageId(),
+          kind: "action_preview",
+          draft,
+          createdAt: Date.now(),
+        },
+      ],
+      memory: {
+        ...memory,
+        topic: "action",
+        pendingActionDraft: draft,
       },
     };
   }
@@ -1507,11 +1655,20 @@ export function processAskAriaMessage(
             comparisonPeriod: context.comparisonPeriod,
           }
         : undefined);
+    const analysisContext = investigationContext
+      ? {
+          ...context,
+          dateRange: investigationContext.dateRange,
+          comparisonPeriod: investigationContext.comparisonPeriod,
+          focusMetric: followMetric,
+          consolidatedChartMetric: followMetric,
+        }
+      : context;
     return {
       messages: [
         userMessage,
         buildProductsFollowUp(
-          context,
+          analysisContext,
           followMetric,
           role,
           productScope,
@@ -1661,17 +1818,6 @@ export function processAskAriaMessage(
           metricId,
           platformId: scopedPlatform,
           lastTopic: "general_performance",
-        },
-      };
-    }
-    if (role === "KAM") {
-      return {
-        messages: [userMessage, buildBrandAnalysisMessage(context, role, scope)],
-        memory: {
-          topic: "metric_change",
-          lastTopic: "brand_analysis",
-          platformId: scopedPlatform,
-          lastPlatform: scopedPlatform,
         },
       };
     }

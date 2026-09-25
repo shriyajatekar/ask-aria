@@ -215,6 +215,8 @@ function AskAriaMessageCard({
     const needsConfirm = requiresExplicitConfirmation(draft.type);
     const isDraftEmail = draft.type === "draft_email";
     const isSendEmail = draft.type === "send_email";
+    const isClientUpdate =
+      draft.emailRecipientGroupId === "client_account";
     const emailBody = draft.emailPreviewLines?.join("\n") ?? "";
     return (
       <div className="rounded-md border border-border px-3 py-3">
@@ -283,13 +285,21 @@ function AskAriaMessageCard({
                 type="button"
                 size="sm"
                 onClick={() =>
-                  onClarificationChoice({
-                    label: "Send to KAM team",
-                    followUpText: "Confirm send email to the KAM team",
-                  })
+                  onClarificationChoice(
+                    isClientUpdate
+                      ? {
+                          label: "Send this",
+                          followUpText:
+                            "Confirm send email to the client account",
+                        }
+                      : {
+                          label: "Send to KAM team",
+                          followUpText: "Confirm send email to the KAM team",
+                        },
+                  )
                 }
               >
-                Send
+                {isClientUpdate ? "Send this" : "Send"}
               </Button>
             </>
           ) : isSendEmail ? (

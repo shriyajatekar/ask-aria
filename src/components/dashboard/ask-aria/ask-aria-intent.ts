@@ -1,6 +1,17 @@
-import type { AskAriaInvestigationMemory } from "./ask-aria-types";
+import type {
+  AskAriaFullContext,
+  AskAriaInvestigationMemory,
+} from "./ask-aria-types";
 import { isHistoricalPatternQuery } from "./ask-aria-historical";
-import { looksLikeActionSpecification, parseActionRequest } from "./ask-aria-actions";
+import {
+  isClientUpdateDraftPartial,
+  isClientUpdateRequest,
+  looksLikeActionSpecification,
+  parseActionRequest,
+} from "./ask-aria-actions";
+import { isPlatformScopeRequest } from "./ask-aria-scope";
+
+export { isClientUpdateRequest } from "./ask-aria-actions";
 
 export type AskAriaIntent =
   | "confirm_action"
@@ -10,11 +21,13 @@ export type AskAriaIntent =
   | "product_analysis"
   | "brand_analysis"
   | "platform_analysis"
+  | "platform_summary"
   | "recommendation"
   | "root_cause"
   | "metric_follow_up"
   | "executive_summary"
   | "historical_pattern"
+  | "client_update"
   | "general_performance";
 
 export function isConfirmPhrase(text: string): boolean {
@@ -27,6 +40,18 @@ export function isConfirmPhrase(text: string): boolean {
     lower === "yes" ||
     lower === "go ahead" ||
     lower.includes("confirm &")
+  );
+}
+
+export function isSendThisConfirmPhrase(text: string): boolean {
+  const lower = text.toLowerCase().trim();
+  if (lower.includes("kam team")) return false;
+  if (lower.includes("send this to")) return false;
+  return (
+    lower === "send this" ||
+    lower === "send it" ||
+    lower.includes("confirm send email to the client") ||
+    lower.includes("confirm send email to the client account")
   );
 }
 
@@ -77,28 +102,79 @@ export function isFollowUpReference(text: string): boolean {
   );
 }
 
+export function hasExplicitMetricInUtterance(text: string): boolean {
+  const lower = text.toLowerCase();
+  return (
+    lower.includes("roas") ||
+    lower.includes("acos") ||
+    lower.includes("conversion") ||
+    lower.includes("gross sales") ||
+    lower.includes("net sales") ||
+    lower.includes("orders") ||
+    lower.includes("revenue") ||
+    lower.includes("units sold") ||
+    lower.includes("click") ||
+    lower.includes("impression") ||
+    lower.includes("ctr") ||
+    lower.includes("cpc") ||
+    lower.includes("spend") ||
+    lower.includes("margin") ||
+    /\bwhat changed\b/.test(lower)
+  );
+}
+
 export function hasActiveInvestigation(
   memory: AskAriaInvestigationMemory,
+  context?: Pick<
+    AskAriaFullContext,
+    "focusMetric" | "consolidatedChartMetric" | "platform"
+  >,
 ): boolean {
-  return (
+  if (
     Boolean(memory.activeAnalysisContext) ||
     memory.topic === "metric_change" ||
     memory.lastTopic === "metric_change" ||
     Boolean(memory.lastMetric || memory.metricId)
+  ) {
+    return true;
+  }
+  if (!context) return false;
+  if (context.platform === "all") {
+    return Boolean(context.consolidatedChartMetric);
+  }
+  return Boolean(context.focusMetric);
+}
+
+function canDraftClientUpdate(
+  memory: AskAriaInvestigationMemory,
+  context?: Pick<
+    AskAriaFullContext,
+    "focusMetric" | "consolidatedChartMetric" | "platform"
+  >,
+): boolean {
+  return (
+    Boolean(memory.activeAnalysisContext) ||
+    hasActiveInvestigation(memory, context)
   );
 }
 
 function isProductFollowUp(
   text: string,
   memory: AskAriaInvestigationMemory,
+  context?: Pick<
+    AskAriaFullContext,
+    "focusMetric" | "consolidatedChartMetric" | "platform"
+  >,
 ): boolean {
   const lower = text.toLowerCase();
   if (!lower.includes("product")) return false;
-  if (!hasActiveInvestigation(memory)) return false;
+  if (!hasActiveInvestigation(memory, context)) return false;
   return (
     isFollowUpReference(text) ||
     lower.includes("caused") ||
     lower.includes("contribut") ||
+    (lower.includes("affecting") &&
+      (lower.includes("performance") || lower.includes("account"))) ||
     lower === "which products?" ||
     lower === "which products"
   );
@@ -203,22 +279,36 @@ function isExecutiveQuery(text: string): boolean {
 export function classifyIntent(
   text: string,
   memory: AskAriaInvestigationMemory,
+  context?: Pick<
+    AskAriaFullContext,
+    "focusMetric" | "consolidatedChartMetric" | "platform"
+  >,
 ): AskAriaIntent {
   const trimmed = text.trim();
   const lower = trimmed.toLowerCase();
 
   const actionParse = parseActionRequest(trimmed);
 
-  if (
-    isConfirmPhrase(trimmed) &&
-    memory.pendingActionDraft &&
-    !looksLikeActionSpecification(trimmed)
-  ) {
-    return "confirm_action";
+  if (memory.pendingActionDraft && !looksLikeActionSpecification(trimmed)) {
+    if (
+      isConfirmPhrase(trimmed) ||
+      isSendThisConfirmPhrase(trimmed)
+    ) {
+      return "confirm_action";
+    }
   }
 
   if (actionParse.kind === "clarification") {
     return "action_clarification";
+  }
+
+  if (
+    isClientUpdateRequest(trimmed) &&
+    canDraftClientUpdate(memory, context) &&
+    actionParse.kind === "ready" &&
+    isClientUpdateDraftPartial(actionParse.partial)
+  ) {
+    return "client_update";
   }
 
   if (actionParse.kind === "ready") {
@@ -230,23 +320,26 @@ export function classifyIntent(
   }
 
   if (isTemporalQuery(trimmed)) {
-    if (hasActiveInvestigation(memory) || isFollowUpReference(trimmed)) {
+    if (hasActiveInvestigation(memory, context) || isFollowUpReference(trimmed)) {
       return "temporal_follow_up";
     }
     return "temporal_follow_up";
   }
 
-  if (isAffectedProductsQuery(trimmed) && hasActiveInvestigation(memory)) {
+  if (
+    isAffectedProductsQuery(trimmed) &&
+    hasActiveInvestigation(memory, context)
+  ) {
     return "product_analysis";
   }
 
-  if (isProductFollowUp(trimmed, memory)) {
+  if (isProductFollowUp(trimmed, memory, context)) {
     return "product_analysis";
   }
 
   if (
     isHistoricalPatternQuery(trimmed) ||
-    (hasActiveInvestigation(memory) &&
+    (hasActiveInvestigation(memory, context) &&
       (lower.includes("like this") || lower.includes("happened before")))
   ) {
     return "historical_pattern";
@@ -274,6 +367,10 @@ export function classifyIntent(
 
   if (isRootCauseQuery(trimmed)) {
     return "root_cause";
+  }
+
+  if (isPlatformScopeRequest(trimmed)) {
+    return "platform_summary";
   }
 
   if (

@@ -12,6 +12,11 @@ export interface DemoRecipientGroup {
 
 export const DEMO_RECIPIENT_GROUPS: DemoRecipientGroup[] = [
   {
+    id: "client_account",
+    label: "Client account (demo)",
+    emails: ["client-contact@demo.commerce-intelligence.io"],
+  },
+  {
     id: "kam_team",
     label: "KAM team (demo)",
     emails: [
@@ -30,6 +35,18 @@ export function resolveDemoRecipientGroup(
   text: string,
 ): DemoRecipientGroup | null {
   const lower = text.toLowerCase();
+  if (
+    lower.includes("client update") ||
+    (lower.includes("client") &&
+      !lower.includes("kam") &&
+      (lower.includes("draft") ||
+        lower.includes("send") ||
+        lower.includes("prepare") ||
+        lower.includes("write") ||
+        lower.includes("create")))
+  ) {
+    return DEMO_RECIPIENT_GROUPS.find((g) => g.id === "client_account") ?? null;
+  }
   if (
     lower.includes("kam") ||
     (lower.includes("account") && lower.includes("team"))

@@ -1,4 +1,4 @@
-import type { PlatformId } from "@/types/analytics";
+import type { MetricId, PlatformId } from "@/types/analytics";
 import { PLATFORM_BY_ID } from "@/data/platforms";
 import { PRODUCT_BY_ID } from "@/data/products";
 import {
@@ -6,9 +6,14 @@ import {
   resolveDemoRecipientGroup,
 } from "@/lib/ask-aria/demo-recipients";
 import {
+  buildClientUpdateBodyLines,
   buildEmailBodyLines,
   buildEmailSubject,
+  defaultClientUpdateSubject,
 } from "@/lib/google/email-content";
+import { METRIC_BY_ID } from "@/data/metrics";
+import { extractThreadAnalysisContext } from "./ask-aria-artifacts";
+import type { AskAriaInvestigationMemory } from "./ask-aria-types";
 import {
   countSpreadsheetRows,
   defaultSpreadsheetTitle,
@@ -123,6 +128,43 @@ function hasNonNumericTargetBidPhrase(text: string): boolean {
   return !/^₹?\s*\d+(?:\.\d+)?$/.test(raw);
 }
 
+export function isClientUpdateRequest(text: string): boolean {
+  const lower = text.toLowerCase().trim();
+  if (lower.includes("kam team")) return false;
+  if (
+    lower.includes("email") &&
+    (lower.includes("kam") || lower.includes("team"))
+  ) {
+    return false;
+  }
+  if (lower.includes("brands need") || lower.includes("brand need attention")) {
+    return false;
+  }
+  const clientFacing =
+    lower.includes("client update") ||
+    lower.includes("client-facing") ||
+    lower.includes("client facing") ||
+    (lower.includes("client") &&
+      (lower.includes("summary") || lower.includes("update")));
+  const verb =
+    lower.includes("draft") ||
+    lower.includes("create") ||
+    lower.includes("write") ||
+    lower.includes("prepare");
+  const draftAnUpdate =
+    /\bdraft\s+(an?\s+)?update\b/.test(lower) &&
+    !lower.includes("kam") &&
+    !lower.includes("team");
+  return (
+    (clientFacing &&
+      (verb || /^draft\s+(a\s+)?client\b/.test(lower))) ||
+    draftAnUpdate ||
+    (verb && clientFacing) ||
+    (lower.includes("prepare") &&
+      (lower.includes("client-facing") || lower.includes("client facing")))
+  );
+}
+
 export function looksLikeActionSpecification(text: string): boolean {
   const lower = text.toLowerCase();
   return (
@@ -140,9 +182,140 @@ export function looksLikeActionSpecification(text: string): boolean {
         lower.includes("kam") ||
         lower.includes("team"))) ||
     (lower.includes("draft") && lower.includes("email")) ||
+    isClientUpdateRequest(text) ||
     lower.includes("confirm send") ||
     /\bset\s+.+\s+bid\b/i.test(text)
   );
+}
+
+export function isClientUpdateDraftPartial(
+  partial: Partial<AskAriaActionDraft>,
+): boolean {
+  return partial.emailRecipientGroupId === "client_account";
+}
+
+export function buildClientUpdateDraftPartial(): Partial<AskAriaActionDraft> {
+  return {
+    type: "draft_email",
+    emailRecipientGroupId: "client_account",
+    emailRecipients: "Client account (demo)",
+  };
+}
+
+function insightSummaryForClientUpdate(
+  messages: AskAriaMessage[],
+  memory: AskAriaInvestigationMemory,
+): string | undefined {
+  const ctx = memory.activeAnalysisContext;
+  const thread = extractThreadAnalysisContext(messages, memory);
+  const metricId = (ctx?.metricId ?? thread.metricId) as MetricId | undefined;
+  const metricLabel = metricId
+    ? METRIC_BY_ID[metricId]?.name ?? metricId
+    : "performance";
+  const scopeLabel = ctx?.scopeLabel ?? thread.platformLabel ?? "your channels";
+
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (message.kind === "insight") {
+      const direction = ctx?.metricDirection;
+      const directionPhrase =
+        direction === "down"
+          ? "declined"
+          : direction === "up"
+            ? "improved"
+            : "shifted";
+      return `${metricLabel} ${directionPhrase} versus the comparison period on ${scopeLabel}. ${message.summary}`;
+    }
+    if (message.kind === "recommendation") {
+      return `${metricLabel} on ${scopeLabel}: ${message.observation}`;
+    }
+  }
+  return undefined;
+}
+
+export function enrichClientUpdateDraft(
+  partial: Partial<AskAriaActionDraft>,
+  context: AskAriaFullContext,
+  options?: {
+    artifact?: WorkspaceArtifactRef | null;
+    userEmail?: string;
+    includeArtifact?: boolean;
+    memory?: AskAriaInvestigationMemory;
+    messages?: AskAriaMessage[];
+  },
+): Partial<AskAriaActionDraft> {
+  if (partial.type !== "draft_email" && partial.type !== "send_email") {
+    return partial;
+  }
+
+  const analysisCtx = options?.memory?.activeAnalysisContext;
+  const contextForEmail: AskAriaFullContext = analysisCtx
+    ? {
+        ...context,
+        dateRange: analysisCtx.dateRange,
+        comparisonPeriod: analysisCtx.comparisonPeriod,
+        focusMetric: analysisCtx.metricId,
+        consolidatedChartMetric: analysisCtx.metricId,
+        platform:
+          analysisCtx.platformId && analysisCtx.platformId !== "all"
+            ? analysisCtx.platformId
+            : context.platform,
+      }
+    : context;
+
+  const artifact =
+    options?.includeArtifact && options.artifact
+      ? options.artifact
+      : partial.emailArtifactUrl
+        ? {
+            url: partial.emailArtifactUrl,
+            kind: partial.emailArtifactKind ?? "doc",
+          }
+        : null;
+
+  const emailToAddresses = resolveEmailToAddresses(partial, options?.userEmail);
+  const group =
+    partial.emailRecipientGroupId
+      ? demoGroupById(partial.emailRecipientGroupId)
+      : resolveDemoRecipientGroup(partial.emailRecipients ?? "client update");
+
+  const insightSummary = options?.messages && options?.memory
+    ? insightSummaryForClientUpdate(options.messages, options.memory)
+    : undefined;
+
+  const emailSubject =
+    partial.emailSubject?.trim() ||
+    defaultClientUpdateSubject(contextForEmail);
+  const emailPreviewLines = buildClientUpdateBodyLines({
+    subject: emailSubject,
+    recipientLabel: partial.emailRecipients ?? group?.label,
+    context: contextForEmail,
+    artifactUrl: artifact?.url,
+    artifactKind: artifact?.kind,
+    insightSummary,
+  });
+
+  const scopeLabel =
+    analysisCtx?.scopeLabel ??
+    (contextForEmail.platform === "all"
+      ? "All platforms"
+      : PLATFORM_BY_ID[contextForEmail.platform]?.name);
+
+  return {
+    ...partial,
+    emailRecipients:
+      partial.emailRecipients ?? group?.label ?? "Client account (demo)",
+    emailRecipientGroupId: partial.emailRecipientGroupId ?? group?.id ?? "client_account",
+    emailToAddresses,
+    emailSubject,
+    emailPreviewLines,
+    emailArtifactUrl: artifact?.url,
+    emailArtifactKind: artifact?.kind,
+    reportPeriodLabel:
+      partial.reportPeriodLabel ?? formatContextPeriodLabel(contextForEmail),
+    reportPlatformScope: partial.reportPlatformScope ?? scopeLabel,
+    workspaceDestination: partial.workspaceDestination ?? "Gmail",
+  };
 }
 
 export function parseActionRequest(
@@ -150,6 +323,10 @@ export function parseActionRequest(
   context?: AskAriaFullContext,
 ): ActionParseResult {
   const lower = text.toLowerCase();
+
+  if (isClientUpdateRequest(text)) {
+    return { kind: "ready", partial: buildClientUpdateDraftPartial() };
+  }
 
   if (!looksLikeActionSpecification(text)) {
     return { kind: "none" };
@@ -700,9 +877,13 @@ export function actionPreviewTitle(draft: AskAriaActionDraft): string {
     case "create_spreadsheet":
       return draft.spreadsheetTitle ?? "Create spreadsheet";
     case "draft_email":
-      return "Draft email";
+      return draft.emailRecipientGroupId === "client_account"
+        ? "Client update draft"
+        : "Draft email";
     case "send_email":
-      return "Send email";
+      return draft.emailRecipientGroupId === "client_account"
+        ? "Send client update"
+        : "Send email";
     default:
       return "Action requires confirmation";
   }

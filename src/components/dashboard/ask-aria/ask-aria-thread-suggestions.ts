@@ -108,10 +108,13 @@ function extractInsightThreadContext(
       if (message.handoffs?.some((h) => h.productId)) {
         productMentioned = true;
       }
+      if (message.kind === "insight" && message.metrics?.[0]?.label) {
+        metricLabel = message.metrics[0].label;
+      }
       const titleMetric = message.title.match(
         /^(?:Executive summary — |.+ — )(.+?)(?: —|$)/,
       );
-      if (titleMetric?.[1]) {
+      if (!metricLabel && titleMetric?.[1]) {
         metricLabel = titleMetric[1].trim();
       }
       break;
@@ -160,9 +163,9 @@ function roleInsightFollowUps(
   if (role === "KAM") {
     return [
       `Show account impact for ${platform}`,
-      "Draft an email to the KAM team with this insight",
+      "Draft a client update",
       "Compare platform ROAS",
-      "Which products are affecting account performance?",
+      "Which products are affecting performance?",
     ];
   }
 
@@ -255,7 +258,7 @@ export function buildContextualThreadSuggestions(
         `Monitor ${scopeLabel} ROAS and alert me if it falls below 3`,
       );
     } else if (role === "KAM") {
-      actionPrompts.push("Draft an email to the KAM team with this insight");
+      actionPrompts.push("Draft a client update");
     } else {
       actionPrompts.push("Create a report from this analysis");
     }

@@ -91,6 +91,7 @@ function inheritsInvestigationScope(
   intent: AskAriaIntent,
 ): boolean {
   if (intent === "product_analysis") return true;
+  if (intent === "platform_summary") return true;
   if (intent === "metric_follow_up" || intent === "temporal_follow_up") {
     return true;
   }
@@ -133,6 +134,64 @@ export function buildPeriodTransparencySection(
       `Comparison period: ${formatRangeLabel(context.comparisonPeriod)}`,
     ],
   };
+}
+
+function hasExplicitMetricInUtterance(text: string): boolean {
+  const lower = text.toLowerCase();
+  return (
+    lower.includes("roas") ||
+    lower.includes("acos") ||
+    lower.includes("conversion") ||
+    lower.includes("gross sales") ||
+    lower.includes("net sales") ||
+    lower.includes("orders") ||
+    lower.includes("revenue") ||
+    lower.includes("units sold") ||
+    lower.includes("click") ||
+    lower.includes("impression") ||
+    lower.includes("ctr") ||
+    lower.includes("cpc") ||
+    lower.includes("spend") ||
+    lower.includes("margin") ||
+    /\bwhat changed\b/.test(lower)
+  );
+}
+
+function isPlatformComparisonUtterance(text: string): boolean {
+  const lower = text.toLowerCase();
+  if (
+    lower.includes("compare") &&
+    (lower.includes("amazon") ||
+      lower.includes("flipkart") ||
+      lower.includes("myntra") ||
+      lower.includes("platform"))
+  ) {
+    return true;
+  }
+  if (lower.includes("which platform") && lower.includes("growing")) {
+    return true;
+  }
+  return (
+    lower.includes("which platform") &&
+    (lower.includes("changed") ||
+      lower.includes("strongest") ||
+      lower.includes("most") ||
+      lower.includes("driving") ||
+      lower.includes("underperform"))
+  );
+}
+
+export function isPlatformScopeRequest(text: string): boolean {
+  if (extractPlatformIdsFromText(text).length === 0) return false;
+  if (hasExplicitMetricInUtterance(text)) return false;
+  if (isPlatformComparisonUtterance(text)) return false;
+  const lower = text.toLowerCase();
+  return (
+    /\b(show me|open|switch to|switch|look at|analyze|analyse|focus on|check)\b/.test(
+      lower,
+    ) ||
+    /\bchange scope\b/.test(lower)
+  );
 }
 
 export function extractPlatformIdsFromText(text: string): PlatformId[] {
