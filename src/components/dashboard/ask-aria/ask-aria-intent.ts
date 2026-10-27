@@ -36,7 +36,8 @@ export type AskAriaIntent =
   | "greeting"
   | "metric_definition"
   | "unknown"
-  | "root_cause_analysis";
+  | "root_cause_analysis"
+  | "situation_alerts";
 
 export function isConfirmPhrase(text: string): boolean {
   const lower = text.toLowerCase().trim();
@@ -266,6 +267,13 @@ function isRecommendationQuery(text: string): boolean {
   );
 }
 
+/** "What needs my attention?", "Any alerts?", "What should I worry about?" */
+export function isSituationQuery(text: string): boolean {
+  return /\b(alerts?|needs? (my )?attention|worry about|be worried about|anything (urgent|wrong)|what's wrong|situations?)\b/i.test(
+    text,
+  );
+}
+
 /** "Run a root-cause analysis", "RCA for ROAS", "what's driving this?" */
 export function isRcaQuery(text: string): boolean {
   return /\b(root[- ]?cause|rca|driver tree|what('s| is) driving (this|it|the (drop|decline|change))|break (it|this) down by drivers?)\b/i.test(
@@ -404,6 +412,10 @@ export function classifyIntent(
 
   if (isPlatformComparisonQuery(trimmed)) {
     return "platform_analysis";
+  }
+
+  if (isSituationQuery(trimmed)) {
+    return "situation_alerts";
   }
 
   if (isRecommendationQuery(trimmed)) {

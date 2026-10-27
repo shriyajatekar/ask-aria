@@ -58,6 +58,7 @@ import {
   metricDefinitionTerm,
 } from "./ask-aria-intent";
 import { goldenPathChips } from "./ask-aria-golden-path";
+import { buildSituationMessage } from "./ask-aria-situations";
 import {
   buildHistoricalSectionLines,
   findHistoricalMetricDeclines,
@@ -1317,7 +1318,23 @@ function formatDisplayDate(iso: string): string {
   });
 }
 
+/**
+ * Shown when an empty conversation opens: the most urgent situation alert,
+ * with what happened last time and a suggestion. Falls back to the older
+ * ROAS nudge when nothing crosses the alert thresholds.
+ */
 export function buildProactiveInsight(
+  context: AskAriaFullContext,
+): AskAriaMessage | null {
+  const situation = buildSituationMessage(
+    context,
+    context.platform === "all" ? undefined : context.platform,
+  );
+  if (situation) return attachSource(situation, context, {});
+  return buildRoasNudge(context);
+}
+
+function buildRoasNudge(
   context: AskAriaFullContext,
 ): AskAriaMessage | null {
   const platformId =
@@ -1444,7 +1461,8 @@ function attachSource(
   if (
     message.kind !== "insight" &&
     message.kind !== "recommendation" &&
-    message.kind !== "rca"
+    message.kind !== "rca" &&
+    message.kind !== "situation"
   ) {
     return message;
   }
@@ -1456,7 +1474,7 @@ function attachSource(
   const strip = (line: string | undefined) =>
     (line ?? "").replace(/^[^:]+:\s*/, "").replace(" → ", " – ");
   const platform = memory.lastPlatform ?? memory.platformId ?? context.platform;
-  const scope = message.kind === "rca"
+  const scope = message.kind === "rca" || message.kind === "situation"
     ? message.scopeLabel
     : scopeLine
     ? strip(scopeLine)
@@ -2249,6 +2267,41 @@ function routeAskAriaMessage(
     return {
       messages: [userMessage, insight.message],
       memory: insight.memory,
+    };
+  }
+
+  if (intent === "situation_alerts") {
+    const platformIds = extractPlatformIdsFromText(trimmed);
+    const situation = buildSituationMessage(context, platformIds[0]);
+    if (!situation) {
+      return {
+        messages: [
+          userMessage,
+          {
+            id: createMessageId(),
+            kind: "assistant_text",
+            text: platformIds.length
+              ? `Nothing on ${PLATFORM_BY_ID[platformIds[0]]?.name ?? "that platform"} crosses the alert thresholds this period (Gross Sales −10%, ROAS or conversion −8%).`
+              : "Nothing crosses the alert thresholds this period (Gross Sales −10%, ROAS or conversion −8%).",
+            createdAt: Date.now(),
+          },
+        ],
+        memory,
+      };
+    }
+    const alertPlatform =
+      situation.kind === "situation"
+        ? extractPlatformIdsFromText(situation.scopeLabel)[0]
+        : undefined;
+    return {
+      messages: [userMessage, situation],
+      memory: {
+        ...memory,
+        topic: "metric_change",
+        lastTopic: "situation",
+        platformId: alertPlatform ?? memory.platformId,
+        lastPlatform: alertPlatform ?? memory.lastPlatform,
+      },
     };
   }
 

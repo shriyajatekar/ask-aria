@@ -38,6 +38,15 @@ export function principlesForMessage(message: AskAriaMessage): AriaPrinciple[] {
       if (message.handoffs?.length) shown.push("offer_next_step");
       if (message.caveat) shown.push("say_when_uncertain");
       break;
+    case "situation":
+      if (leadsWithInsight(message.summary)) shown.push("lead_with_insight");
+      if (message.source) shown.push("show_source");
+      shown.push("one_answer");
+      shown.push("offer_next_step");
+      if (!message.hasPrecedent || /rough guide|had not recovered/.test(message.pastLine)) {
+        shown.push("say_when_uncertain");
+      }
+      break;
     case "rca":
       if (leadsWithInsight(message.summary)) shown.push("lead_with_insight");
       if (message.source) shown.push("show_source");

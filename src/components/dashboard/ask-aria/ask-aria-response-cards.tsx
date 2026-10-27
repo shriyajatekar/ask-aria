@@ -257,6 +257,10 @@ function AskAriaMessageCard({
     return <RootCauseCard message={message} onHandoff={onHandoff} />;
   }
 
+  if (message.kind === "situation") {
+    return <SituationCard message={message} onHandoff={onHandoff} />;
+  }
+
   if (message.kind === "recommendation") {
     return (
       <RecommendationAccordionCard
@@ -789,6 +793,65 @@ function InsightAccordionCard({
         ))}
       </div>
 
+      <HandoffButtons handoffs={message.handoffs} onHandoff={onHandoff} />
+    </div>
+  );
+}
+
+/**
+ * Situation alert: what's happening, what happened last time, and a
+ * suggested next step — in that order, so the reader can act without
+ * opening anything else.
+ */
+function SituationCard({
+  message,
+  onHandoff,
+}: {
+  message: Extract<AskAriaMessage, { kind: "situation" }>;
+  onHandoff: (handoff: AskAriaHandoff) => void;
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-md border px-3 py-3",
+        message.severity === "high" ? "border-error/40" : "border-border",
+      )}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="type-label text-text-tertiary">Alert · {message.title}</p>
+        <span
+          className={cn(
+            "rounded-sm px-1.5 py-0.5 type-small",
+            message.severity === "high"
+              ? "bg-error-subtle text-error"
+              : "border border-border text-text-secondary",
+          )}
+        >
+          {message.severity === "high" ? "Needs attention" : "Worth watching"}
+        </span>
+      </div>
+      <p className="mt-2 type-body font-medium leading-snug text-text-primary">
+        {message.summary}
+      </p>
+      <dl className="mt-3 space-y-2.5">
+        <div>
+          <dt className="type-label text-text-primary">Last time</dt>
+          <dd className="mt-0.5 type-small text-text-secondary">{message.pastLine}</dd>
+        </div>
+        <div>
+          <dt className="type-label text-text-primary">Suggested next step</dt>
+          <dd className="mt-0.5 type-small text-text-secondary">{message.suggestion}</dd>
+        </div>
+        {message.alsoWatching.length ? (
+          <div>
+            <dt className="type-label text-text-primary">Also watching</dt>
+            <dd className="mt-0.5 type-small text-text-secondary">
+              {message.alsoWatching.join(" · ")}
+            </dd>
+          </div>
+        ) : null}
+      </dl>
+      <SourceLine source={message.source} />
       <HandoffButtons handoffs={message.handoffs} onHandoff={onHandoff} />
     </div>
   );

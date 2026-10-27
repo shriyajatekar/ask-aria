@@ -225,6 +225,24 @@ export type AskAriaMessage =
     }
   | {
       id: string;
+      kind: "situation";
+      /** "Amazon Gross Sales down 22.0%" */
+      title: string;
+      summary: string;
+      /** What happened the last time, or that there's no precedent. */
+      pastLine: string;
+      hasPrecedent: boolean;
+      suggestion: string;
+      severity: "high" | "medium";
+      scopeLabel: string;
+      /** Titles of the next most urgent situations. */
+      alsoWatching: string[];
+      source?: AskAriaAnswerSource;
+      handoffs?: AskAriaHandoff[];
+      createdAt: number;
+    }
+  | {
+      id: string;
       kind: "rca";
       title: string;
       /** Lead sentence: the top cause and how much it explains. */
