@@ -2,11 +2,19 @@
 
 import { useState } from "react";
 
-import { ChevronDown, ChevronRight, Loader2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, ThumbsDown, ThumbsUp } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { PLATFORM_BY_ID } from "@/data/platforms";
+import { useAuth } from "@/contexts/auth-provider";
 import { cn } from "@/lib/cn";
+import {
+  FEEDBACK_REASONS,
+  loadFeedback,
+  saveFeedback,
+  type AnswerFeedback,
+  type FeedbackReason,
+} from "@/lib/ask-aria/feedback";
 
 import {
   actionPreviewRows,
@@ -87,9 +95,93 @@ export function AskAriaMessageList({
             onProactivePrompt={onProactivePrompt}
             onClarificationChoice={onClarificationChoice}
           />
+          {RATEABLE_KINDS.has(message.kind) ? <FeedbackBar message={message} /> : null}
           {showDesignNotes ? <DesignNotes message={message} /> : null}
         </div>
       ))}
+    </div>
+  );
+}
+
+const RATEABLE_KINDS = new Set<AskAriaMessage["kind"]>([
+  "insight",
+  "recommendation",
+  "rca",
+  "deep_dive",
+  "situation",
+  "outcome",
+]);
+
+function messageTitle(message: AskAriaMessage): string {
+  return "title" in message && typeof message.title === "string" ? message.title : message.kind;
+}
+
+/** "Was this helpful?" with a one-tap reason when it wasn't. Stored in this browser. */
+function FeedbackBar({ message }: { message: AskAriaMessage }) {
+  const { user } = useAuth();
+  const [saved, setSaved] = useState<AnswerFeedback | undefined>(() =>
+    loadFeedback(user?.id).find((f) => f.messageId === message.id),
+  );
+  const [askingReason, setAskingReason] = useState(false);
+
+  function record(rating: "up" | "down", reason?: FeedbackReason) {
+    const entry: AnswerFeedback = {
+      messageId: message.id,
+      title: messageTitle(message),
+      rating,
+      reason,
+      createdAt: Date.now(),
+    };
+    if (user?.id) saveFeedback(user.id, entry);
+    setSaved(entry);
+    setAskingReason(false);
+  }
+
+  if (saved && !askingReason) {
+    return (
+      <p className="mt-1 type-small text-text-tertiary" role="status">
+        {saved.rating === "up" ? "Thanks, marked helpful." : `Thanks, noted: ${saved.reason ?? "not helpful"}.`}
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-1">
+      <div className="flex items-center gap-1">
+        <span className="type-small text-text-tertiary">Was this helpful?</span>
+        <button
+          type="button"
+          onClick={() => record("up")}
+          aria-label="Helpful"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-text-tertiary hover:bg-surface-hover hover:text-text-primary"
+        >
+          <ThumbsUp className="h-3.5 w-3.5" aria-hidden />
+        </button>
+        <button
+          type="button"
+          onClick={() => setAskingReason(true)}
+          aria-label="Not helpful"
+          aria-expanded={askingReason}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-text-tertiary hover:bg-surface-hover hover:text-text-primary"
+        >
+          <ThumbsDown className="h-3.5 w-3.5" aria-hidden />
+        </button>
+      </div>
+      {askingReason ? (
+        <ul className="mt-1 flex flex-wrap gap-1.5" aria-label="What was wrong?">
+          {FEEDBACK_REASONS.map((reason) => (
+            <li key={reason}>
+              <button
+                type="button"
+                onClick={() => record("down", reason)}
+                className="rounded-md border border-border px-2 py-1 type-small text-text-primary hover:bg-surface-hover"
+              >
+                {reason}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 }
@@ -259,6 +351,35 @@ function AskAriaMessageCard({
 
   if (message.kind === "situation") {
     return <SituationCard message={message} onHandoff={onHandoff} />;
+  }
+
+  if (message.kind === "feedback_log") {
+    return (
+      <div className="rounded-md border border-border px-3 py-3">
+        <p className="type-label text-text-tertiary">Feedback</p>
+        <p className="mt-2 type-body font-medium leading-snug text-text-primary">{message.summary}</p>
+        {message.reasons.length ? (
+          <>
+            <p className="mt-3 type-label text-text-primary">Why answers missed</p>
+            <ul className="mt-1 space-y-0.5 type-small text-text-secondary">
+              {message.reasons.map((r) => (
+                <li key={r.reason}>{r.reason}: {r.count}</li>
+              ))}
+            </ul>
+          </>
+        ) : null}
+        <p className="mt-3 type-label text-text-primary">Questions Aria couldn&apos;t answer</p>
+        {message.unanswered.length ? (
+          <ul className="mt-1 list-disc space-y-0.5 pl-5 type-small text-text-secondary">
+            {message.unanswered.map((q) => (
+              <li key={q}>“{q}”</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-1 type-small text-text-secondary">None so far.</p>
+        )}
+      </div>
+    );
   }
 
   if (message.kind === "outcome") {

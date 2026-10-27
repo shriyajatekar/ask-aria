@@ -31,6 +31,12 @@ import { classifyIntent } from "./ask-aria-intent";
 import { understandWithAi } from "./ask-aria-ai-client";
 import { METRIC_BY_ID } from "@/data/metrics";
 import {
+  loadFeedback,
+  loadUnanswered,
+  logUnanswered,
+  summariseFeedback,
+} from "@/lib/ask-aria/feedback";
+import {
   loadTrackedActions,
   saveTrackedAction,
   trackableFromDraft,
@@ -529,6 +535,7 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
           appUserEmail: user?.email,
           activeMonitors: monitors,
           trackedActions: loadTrackedActions(userId),
+          feedbackSummary: summariseFeedback(loadFeedback(userId), loadUnanswered(userId)),
         },
       );
 
@@ -539,6 +546,8 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
     if (classifyIntent(text, memory, contextForTurn) === "unknown") {
       setInputValue("");
       const understood = await understandWithAi(text);
+      // Log questions neither the rules nor the AI could read.
+      if (!understood && userId) logUnanswered(userId, text);
       if (understood) {
         const rewritten = run(understood);
         const [userMessage, ...replies] = rewritten.messages;
@@ -567,6 +576,7 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
     setIsSubmitting(false);
   }, [
     appendMessages,
+    userId,
     conversations,
     ensureSubmitConversationId,
     inputValue,
@@ -601,6 +611,7 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
           appUserEmail: user?.email,
           activeMonitors: monitors,
           trackedActions: loadTrackedActions(userId),
+          feedbackSummary: summariseFeedback(loadFeedback(userId), loadUnanswered(userId)),
         },
       );
       appendMessages(
@@ -615,6 +626,7 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
     },
     [
       appendMessages,
+      userId,
       conversations,
       ensureSubmitConversationId,
       liveContext,

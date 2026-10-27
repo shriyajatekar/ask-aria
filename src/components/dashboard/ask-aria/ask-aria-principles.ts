@@ -38,6 +38,9 @@ export function principlesForMessage(message: AskAriaMessage): AriaPrinciple[] {
       if (message.handoffs?.length) shown.push("offer_next_step");
       if (message.caveat) shown.push("say_when_uncertain");
       break;
+    case "feedback_log":
+      shown.push("one_answer");
+      break;
     case "outcome":
       shown.push("lead_with_insight", "one_answer", "say_when_uncertain");
       break;

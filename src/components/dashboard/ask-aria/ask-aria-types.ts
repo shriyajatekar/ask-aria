@@ -247,6 +247,15 @@ export type AskAriaMessage =
     }
   | {
       id: string;
+      /** Summary of answer feedback and questions Aria couldn't answer. */
+      kind: "feedback_log";
+      summary: string;
+      reasons: Array<{ reason: string; count: number }>;
+      unanswered: string[];
+      createdAt: number;
+    }
+  | {
+      id: string;
       /** "Did it work?" — before/after checks on confirmed actions. */
       kind: "outcome";
       title: string;

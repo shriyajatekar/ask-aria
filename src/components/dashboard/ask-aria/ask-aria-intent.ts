@@ -39,7 +39,8 @@ export type AskAriaIntent =
   | "root_cause_analysis"
   | "situation_alerts"
   | "deep_dive"
-  | "outcome_check";
+  | "outcome_check"
+  | "feedback_log";
 
 export function isConfirmPhrase(text: string): boolean {
   const lower = text.toLowerCase().trim();
@@ -270,6 +271,11 @@ function isRecommendationQuery(text: string): boolean {
 }
 
 /** "What needs my attention?", "Any alerts?", "What should I worry about?" */
+/** "Show feedback", "What couldn't you answer?" */
+export function isFeedbackLogQuery(text: string): boolean {
+  return /\b(feedback( log)?|couldn'?t (you )?answer|unanswered)\b/i.test(text);
+}
+
 /** "Did it work?", "How did my changes do?", "Show outcomes" */
 export function isOutcomeQuery(text: string): boolean {
   return /\b(did (it|that|this|they|my \w+( \w+)?) work|how did my (changes?|actions?|bids?) (do|go|perform)|outcomes?|did .{0,30} help)\b/i.test(text);
@@ -336,6 +342,10 @@ export function classifyIntent(
 ): AskAriaIntent {
   const trimmed = text.trim();
   const lower = trimmed.toLowerCase();
+
+  if (isFeedbackLogQuery(trimmed)) {
+    return "feedback_log";
+  }
 
   // "How did my bids do?" is about past actions, not a new bid.
   if (isOutcomeQuery(trimmed)) {

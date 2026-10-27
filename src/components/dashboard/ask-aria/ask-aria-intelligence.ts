@@ -63,6 +63,7 @@ import { goldenPathChips } from "./ask-aria-golden-path";
 import { buildSituationMessage, describePastEpisode } from "./ask-aria-situations";
 import { buildOutcomeMessage } from "./ask-aria-outcomes";
 import type { TrackedAction } from "@/lib/analytics/outcomes";
+import type { FeedbackSummary } from "@/lib/ask-aria/feedback";
 import { buildCollabDraftPartial, isCollabAction } from "./ask-aria-collab-actions";
 import {
   buildHistoricalSectionLines,
@@ -1524,6 +1525,8 @@ export interface ProcessAskAriaMessageOptions {
   recentMessages?: AskAriaMessage[];
   appUserEmail?: string;
   activeMonitors?: AriaMonitor[];
+  /** Answer feedback and unanswered questions, for "Show feedback". */
+  feedbackSummary?: FeedbackSummary;
   /** Confirmed actions to check in "Did it work?". */
   trackedActions?: TrackedAction[];
 }
@@ -2433,6 +2436,27 @@ function routeAskAriaMessage(
     return {
       messages: [userMessage, insight.message],
       memory: insight.memory,
+    };
+  }
+
+  if (intent === "feedback_log") {
+    const f = options?.feedbackSummary ?? { helpful: 0, notHelpful: 0, reasons: [], unanswered: [] };
+    const total = f.helpful + f.notHelpful;
+    return {
+      messages: [
+        userMessage,
+        {
+          id: createMessageId(),
+          kind: "feedback_log",
+          summary: total
+            ? `${f.helpful} of ${total} rated answer${total === 1 ? "" : "s"} were helpful. Feedback is kept in this browser only.`
+            : "No answers rated yet. Use the thumbs under any answer; feedback is kept in this browser only.",
+          reasons: f.reasons,
+          unanswered: f.unanswered,
+          createdAt: Date.now(),
+        },
+      ],
+      memory,
     };
   }
 
