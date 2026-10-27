@@ -46,9 +46,12 @@ import {
 import {
   classifyIntent,
   isCapabilityDiscoveryQuery,
+  isGrowthQuestion,
   isMonitorListingQuery,
   isSendThisConfirmPhrase,
+  metricDefinitionTerm,
 } from "./ask-aria-intent";
+import { goldenPathChips } from "./ask-aria-golden-path";
 import {
   buildHistoricalSectionLines,
   findHistoricalMetricDeclines,
@@ -285,6 +288,37 @@ function buildBrandAnalysisMessage(
   };
 }
 
+/** Below this, a period-over-period move is treated as noise, not a trend. */
+export const MATERIAL_CHANGE_PCT = 1;
+
+/**
+ * "Say when uncertain": flags questions whose premise the data contradicts
+ * ("why did ROAS drop?" when it rose) and moves too small to explain.
+ */
+export function buildPremiseCaveat(
+  question: string,
+  metricLabel: string,
+  scopeLabel: string,
+  pct: number,
+): string | undefined {
+  const lower = question.toLowerCase();
+  const claimsDown = /\b(drop|dropp|fall|fell|declin|decreas|down|worse|lower)/.test(lower);
+  const claimsUp = /\b(rise|rose|grow|grew|increas|go up|went up|up\b|better|higher|improv)/.test(lower);
+  const actual = pct > 0 ? "rose" : pct < 0 ? "fell" : "did not change";
+  const where = scopeLabel === "all platforms" ? "" : ` on ${scopeLabel}`;
+
+  if (claimsDown && !claimsUp && pct > 0) {
+    return `${metricLabel}${where} didn't drop — it ${actual} ${formatPct(pct)} vs the comparison period. Here's the full picture.`;
+  }
+  if (claimsUp && !claimsDown && pct < 0) {
+    return `${metricLabel}${where} didn't go up — it ${actual} ${formatPct(pct)} vs the comparison period. Here's the full picture.`;
+  }
+  if (Math.abs(pct) < MATERIAL_CHANGE_PCT) {
+    return `${metricLabel}${where} moved only ${formatPct(pct)} — too small to treat as a real change, so I can't point to a clear cause.`;
+  }
+  return undefined;
+}
+
 function singlePlatformScope(platformId: PlatformId): ResolvedQueryScope {
   return {
     mode: "single_platform",
@@ -362,6 +396,7 @@ function buildPlatformComparisonMessage(
     scope,
   );
   const metricId = resolveFocusMetric(context, memory, text);
+  const growthQuestion = isGrowthQuestion(text);
 
   const rows = selectedPlatforms
     .map((platformId) => {
@@ -375,14 +410,18 @@ function buildPlatformComparisonMessage(
         cur: delta.cur,
       };
     })
-    .sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct));
+    .sort((a, b) =>
+      growthQuestion ? b.pct - a.pct : Math.abs(b.pct) - Math.abs(a.pct),
+    );
 
   const top = rows[0];
   const lines =
     role === "CXO"
       ? top
         ? [
-            `${top.name} shows the largest ${metricName(metricId)} movement (${formatPct(top.pct)}) among selected platforms.`,
+            growthQuestion
+              ? `${top.name} grew fastest: ${metricName(metricId)} ${formatPct(top.pct)} vs the comparison period.`
+              : `${top.name} shows the largest ${metricName(metricId)} movement (${formatPct(top.pct)}) among selected platforms.`,
           ]
         : ["No platform movement available in the current filters."]
       : rows.slice(0, 5).map(
@@ -422,12 +461,16 @@ function buildInsightMessage(
   memory: AskAriaInvestigationMemory,
   role: UserRole,
   scope: ResolvedQueryScope,
+  question?: string,
 ): { message: AskAriaMessage; memory: AskAriaInvestigationMemory } {
   const { current, comparison, selectedPlatforms } = filterForScope(
     context,
     scope,
   );
   const primary = metricDelta(current, comparison, metricId);
+  const caveat = question
+    ? buildPremiseCaveat(question, metricName(metricId), scope.scopeLabel, primary.pct)
+    : undefined;
   const orders = metricDelta(current, comparison, "orders");
   const conversion = metricDelta(current, comparison, "conversion_rate");
 
@@ -523,6 +566,7 @@ function buildInsightMessage(
         },
       ],
       handoffs,
+      caveat,
       createdAt: Date.now(),
     },
     memory: {
@@ -1024,6 +1068,61 @@ function buildExecutiveSummary(
       createdAt: Date.now(),
     },
     riskPlatformId: risk?.platformId,
+  };
+}
+
+const METRIC_ALIASES: Record<string, MetricId> = {
+  conversion: "conversion_rate",
+  ctr: "click_through_rate",
+  aov: "average_order_value",
+  "buy box": "buy_box_share",
+  spend: "ad_spend",
+};
+
+function findMetricByTerm(term: string): MetricId | undefined {
+  const normalized = term.toLowerCase().trim();
+  const byName = Object.values(METRIC_BY_ID).find(
+    (metric) =>
+      metric.name.toLowerCase() === normalized ||
+      metric.id.replace(/_/g, " ") === normalized,
+  );
+  return byName?.id ?? METRIC_ALIASES[normalized];
+}
+
+/** Greetings, metric definitions and questions Aria can't answer — no analysis card. */
+function buildNonAnalysisReply(
+  intent: "greeting" | "metric_definition" | "unknown",
+  text: string,
+  role: UserRole,
+): AskAriaMessage {
+  const chips = goldenPathChips(role);
+  let reply: string;
+  if (intent === "greeting") {
+    reply =
+      "Hi — I answer questions about sales, ads and platform performance in this demo workspace. Try one of these:";
+  } else if (intent === "metric_definition") {
+    const term = metricDefinitionTerm(text) ?? "";
+    const metricId = findMetricByTerm(term);
+    const metric = metricId ? METRIC_BY_ID[metricId] : undefined;
+    reply = metric
+      ? `${metric.name}: ${metric.description}.`
+      : `I don't have a definition for "${term}" in this workspace.`;
+    if (metric) {
+      chips.unshift({
+        label: `How is ${metric.name} trending?`,
+        prompt: `What changed in ${metric.name}?`,
+      });
+    }
+  } else {
+    reply =
+      "I'm not sure what you're asking, so I won't guess. I can explain changes in sales, ROAS, conversion and orders across the 12 platforms, compare platforms, brands and products, or draft a report. For example:";
+  }
+  return {
+    id: createMessageId(),
+    kind: "assistant_text",
+    text: reply,
+    suggestionChips: chips.slice(0, 3),
+    createdAt: Date.now(),
   };
 }
 
@@ -1681,6 +1780,17 @@ export function processAskAriaMessage(
     };
   }
 
+  if (
+    intent === "greeting" ||
+    intent === "metric_definition" ||
+    intent === "unknown"
+  ) {
+    return {
+      messages: [userMessage, buildNonAnalysisReply(intent, trimmed, role)],
+      memory,
+    };
+  }
+
   if (intent === "temporal_follow_up") {
     const temporalMemory = {
       topic: "temporal" as const,
@@ -1940,6 +2050,7 @@ export function processAskAriaMessage(
       memory,
       role,
       followScope,
+      trimmed,
     );
     return {
       messages: [userMessage, insight.message],

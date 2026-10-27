@@ -107,6 +107,14 @@ export interface AskAriaInsightSection {
   lines: string[];
 }
 
+/** Where an answer's numbers come from — shown on every analysis answer. */
+export interface AskAriaAnswerSource {
+  dataset: string;
+  scope: string;
+  period: string;
+  comparison: string;
+}
+
 export interface AskAriaMetricLine {
   label: string;
   value: string;
@@ -129,6 +137,9 @@ export type AskAriaMessage =
       sections: AskAriaInsightSection[];
       metrics?: AskAriaMetricLine[];
       handoffs?: AskAriaHandoff[];
+      /** Shown above the answer when the question's premise is wrong or the signal is weak. */
+      caveat?: string;
+      source?: AskAriaAnswerSource;
       createdAt: number;
     }
   | {
@@ -142,6 +153,7 @@ export type AskAriaMessage =
       expectedConsideration?: string;
       nextAction?: string;
       handoffs?: AskAriaHandoff[];
+      source?: AskAriaAnswerSource;
       createdAt: number;
     }
   | {
