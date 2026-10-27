@@ -27,6 +27,8 @@ import {
   buildProactiveInsight,
   processAskAriaMessage,
 } from "./ask-aria-intelligence";
+import { classifyIntent } from "./ask-aria-intent";
+import { understandWithAi } from "./ask-aria-ai-client";
 import {
   mapDashboardToAskAriaView,
   toFullContext,
@@ -494,7 +496,7 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
     threadConversationId,
   ]);
 
-  const submitQuestion = useCallback(() => {
+  const submitQuestion = useCallback(async () => {
     const text = inputValue.trim();
     if (!text) return;
     setIsSubmitting(true);
@@ -509,18 +511,45 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
     const contextForTurn =
       conversation?.savedContext ?? liveContext;
     const roleForTurn = conversation?.role ?? role;
-    const result = processAskAriaMessage(
-      text,
-      contextForTurn,
-      memory,
-      roleForTurn,
-      workspaceConnection,
-      {
-        recentMessages: conversation?.messages ?? [],
-        appUserEmail: user?.email,
-        activeMonitors: monitors,
-      },
-    );
+    const run = (question: string) =>
+      processAskAriaMessage(
+        question,
+        contextForTurn,
+        memory,
+        roleForTurn,
+        workspaceConnection,
+        {
+          recentMessages: conversation?.messages ?? [],
+          appUserEmail: user?.email,
+          activeMonitors: monitors,
+        },
+      );
+
+    // Aria's own rules answer first. Only when they can't read the question
+    // is the AI asked to map it onto a question Aria knows; if the AI is off
+    // or fails, the rules' honest "I'm not sure" reply stands.
+    let result = run(text);
+    if (classifyIntent(text, memory, contextForTurn) === "unknown") {
+      setInputValue("");
+      const understood = await understandWithAi(text);
+      if (understood) {
+        const rewritten = run(understood);
+        const [userMessage, ...replies] = rewritten.messages;
+        result = {
+          memory: rewritten.memory,
+          messages: [
+            userMessage?.kind === "user" ? { ...userMessage, text } : userMessage,
+            {
+              id: createMessageId(),
+              kind: "assistant_text",
+              text: `I read this as: “${understood}”`,
+              createdAt: Date.now(),
+            },
+            ...replies,
+          ].filter(Boolean) as AskAriaMessage[],
+        };
+      }
+    }
     appendMessages(
       result.messages,
       result.memory,
