@@ -131,6 +131,13 @@ function hashSeed(...parts: string[]): number {
   return (hash >>> 0) / 4294967295;
 }
 
+/** First day of the original dataset; anchors the per-position random seeds. */
+const SEED_ANCHOR = Date.parse("2025-12-02T00:00:00.000Z");
+
+function seedDateForDay(dayIndex: number): string {
+  return new Date(SEED_ANCHOR + dayIndex * 86_400_000).toISOString().slice(0, 10);
+}
+
 function enumerateDates(start: string, end: string): string[] {
   const dates: string[] = [];
   const cursor = new Date(`${start}T00:00:00.000Z`);
@@ -305,7 +312,10 @@ function buildRecord(
   previousRevenue: number,
 ): PerformanceRecord {
   const profile = PLATFORM_PROFILES[product.platformId];
-  const noise = hashSeed(product.id, date);
+  // Seeded by position in the timeline (the date that position had in the
+  // original Dec 2025 – Feb 2026 dataset), not today's calendar date, so the
+  // rolling dataset tells the same story every day.
+  const noise = hashSeed(product.id, seedDateForDay(dayIndex));
   const weekendBoost = [0, 6].includes(new Date(`${date}T00:00:00.000Z`).getUTCDay())
     ? 1.08
     : 1;

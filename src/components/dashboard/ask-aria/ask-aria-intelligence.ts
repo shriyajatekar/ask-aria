@@ -2220,7 +2220,7 @@ function routeAskAriaMessage(
             : `No comparable ${metricName(focusMetric)} drop on ${scope.scopeLabel} in the available history.`,
           caveat: events.length
             ? undefined
-            : "The synthetic dataset covers about 10 weeks (2 Dec 2025 – 15 Feb 2026), too short to tell whether this is a recurring pattern.",
+            : `The synthetic dataset covers about 11 weeks (${formatDisplayDate(PERFORMANCE_DATE_RANGE.start)} – ${formatDisplayDate(PERFORMANCE_DATE_RANGE.end)}), too short to tell whether this is a recurring pattern.`,
           sections: prependAnalysisSections(context, scope, [
             insightSection("what_happened_historically", "What happened historically", lines),
           ]),

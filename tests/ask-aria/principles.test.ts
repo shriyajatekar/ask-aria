@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { PERFORMANCE_DATE_RANGE } from "@/data/scenarios";
 import { DEMO_DATASET_LABEL } from "@/components/dashboard/ask-aria/ask-aria-intelligence";
 import { principlesForMessage } from "@/components/dashboard/ask-aria/ask-aria-principles";
 import type { AskAriaMessage } from "@/components/dashboard/ask-aria/ask-aria-types";
@@ -47,7 +48,11 @@ describe("show the source", () => {
     if (reply.kind === "insight") {
       expect(reply.title).toContain("Previous week");
       // 7-day window, not the dashboard's 30-day range.
-      expect(reply.source?.period).toMatch(/2 Feb 2026 – 8 Feb 2026/);
+      // The week before last: 13 to 7 days before the dataset ends.
+      const day = (offset: number) =>
+        new Date(Date.parse(`${PERFORMANCE_DATE_RANGE.end}T00:00:00Z`) - offset * 86_400_000)
+          .toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+      expect(reply.source?.period).toBe(`${day(13)} – ${day(7)}`);
     }
   });
 });

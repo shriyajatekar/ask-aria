@@ -65,24 +65,49 @@ export const SCENARIO_DEFINITIONS: ScenarioDefinition[] = [
   },
 ];
 
+/**
+ * The demo timeline rolls forward: the synthetic dataset always ends
+ * yesterday (UTC) and covers the 76 days up to it, so the dashboard
+ * opens on the real last 30 days. Each day's numbers depend on its position
+ * in the timeline, not its calendar date, so the story (and the golden path)
+ * is the same every day; only the dates move.
+ */
+export const DATASET_DAYS = 76;
+
+const DAY_MS = 86_400_000;
+
+function isoDaysBefore(endIso: string, days: number): string {
+  return new Date(Date.parse(`${endIso}T00:00:00.000Z`) - days * DAY_MS)
+    .toISOString()
+    .slice(0, 10);
+}
+
+/** Yesterday in UTC, the last full day of data. */
+export function datasetEndFor(now: number = Date.now()): string {
+  return new Date(now - DAY_MS).toISOString().slice(0, 10);
+}
+
+const DATASET_END = datasetEndFor();
+
 export const PERFORMANCE_DATE_RANGE = {
-  start: "2025-12-02",
-  end: "2026-02-15",
-} as const;
+  start: isoDaysBefore(DATASET_END, DATASET_DAYS - 1),
+  end: DATASET_END,
+};
 
-/** Recent window used for scenario emphasis and comparisons */
+/** Recent window used for scenario emphasis and comparisons: last 30 days. */
 export const CURRENT_PERIOD = {
-  start: "2026-01-17",
-  end: "2026-02-15",
-} as const;
+  start: isoDaysBefore(DATASET_END, 29),
+  end: DATASET_END,
+};
 
+/** The 29 days before the current period. */
 export const COMPARISON_PERIOD = {
-  start: "2025-12-19",
-  end: "2026-01-16",
-} as const;
+  start: isoDaysBefore(DATASET_END, 58),
+  end: isoDaysBefore(DATASET_END, 30),
+};
 
-/** Amazon ROAS decline intensifies in this window */
+/** Amazon ROAS decline intensifies over the last 23 days. */
 export const ROAS_DECLINE_WINDOW = {
-  start: "2026-01-24",
-  end: "2026-02-15",
-} as const;
+  start: isoDaysBefore(DATASET_END, 22),
+  end: DATASET_END,
+};
