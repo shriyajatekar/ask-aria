@@ -312,6 +312,15 @@ export interface BrandMovementRow {
   previous: number;
 }
 
+function brandLead(declining: BrandMovementRow[]): string {
+  const worst = declining[0];
+  if (!worst) return "No brand lost revenue in the current filters.";
+  const others = declining.length - 1;
+  return `${worst.brandName} needs attention first: revenue ${formatPct(worst.pct)} vs the comparison period${
+    others > 0 ? `, and ${others} other brand${others === 1 ? " is" : "s are"} also down` : ""
+  }.`;
+}
+
 export function formatBrandAnalysis(
   role: UserRole,
   rows: BrandMovementRow[],
@@ -355,7 +364,7 @@ export function formatBrandAnalysis(
   if (role === "KAM") {
     return {
       title: "Brands needing attention",
-      summary: "Account-level revenue movement for the active workspace filters.",
+      summary: brandLead(declining),
       sections: [
         insightSection(
           "accounts_to_review",
@@ -383,7 +392,7 @@ export function formatBrandAnalysis(
 
   return {
     title: "Brand performance investigation",
-    summary: "Brands ranked by revenue change versus the comparison period.",
+    summary: brandLead(declining),
     sections: [
       insightSection(
         "declining_brands_evidence",

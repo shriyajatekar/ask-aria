@@ -1,0 +1,78 @@
+import { describe, expect, it } from "vitest";
+
+import { DEMO_DATASET_LABEL } from "@/components/dashboard/ask-aria/ask-aria-intelligence";
+import { principlesForMessage } from "@/components/dashboard/ask-aria/ask-aria-principles";
+import type { AskAriaMessage } from "@/components/dashboard/ask-aria/ask-aria-types";
+
+import { ask, converse } from "./helpers";
+
+const ROLES = ["ANALYST", "KAM", "CXO"] as const;
+
+const ANALYSIS_QUESTIONS = [
+  "Why did ROAS drop on Amazon?",
+  "Which brands need attention?",
+  "What's the biggest risk this month?",
+  "Compare Amazon and Flipkart",
+  "What should I do?",
+  "What about last week?",
+  "Show me top products",
+];
+
+function analysisReplies(): AskAriaMessage[] {
+  return ROLES.flatMap((role) =>
+    ANALYSIS_QUESTIONS.flatMap((q) => ask(role, q).reply),
+  ).filter((m) => m.kind === "insight" || m.kind === "recommendation");
+}
+
+describe("show the source", () => {
+  it("cites dataset, scope and both periods on every analysis answer", () => {
+    const replies = analysisReplies();
+    expect(replies.length).toBeGreaterThan(15);
+    for (const reply of replies) {
+      if (reply.kind !== "insight" && reply.kind !== "recommendation") continue;
+      expect(reply.source?.dataset).toBe(DEMO_DATASET_LABEL);
+      expect(reply.source?.scope).toBeTruthy();
+      expect(reply.source?.period).toMatch(/\d{4}/);
+      expect(reply.source?.comparison).toMatch(/\d{4}/);
+    }
+  });
+
+  it("cites the window actually analysed for time questions", () => {
+    const [, lastWeek] = converse("ANALYST", [
+      "Why did ROAS drop on Amazon?",
+      "What about last week?",
+    ]);
+    const reply = lastWeek.reply[0];
+    expect(reply.kind).toBe("insight");
+    if (reply.kind === "insight") {
+      expect(reply.title).toContain("Previous week");
+      // 7-day window, not the dashboard's 30-day range.
+      expect(reply.source?.period).toMatch(/2 Feb 2026 – 8 Feb 2026/);
+    }
+  });
+});
+
+describe("design-notes labels", () => {
+  it("every analysis answer shows source, one answer and leads with a number", () => {
+    for (const reply of analysisReplies()) {
+      const shown = principlesForMessage(reply);
+      expect(shown).toContain("show_source");
+      expect(shown).toContain("one_answer");
+      expect(shown).toContain("lead_with_insight");
+    }
+  });
+
+  it("labels the confirm-before-action step", () => {
+    const turns = converse("KAM", ["Which brands need attention?", "Draft a client update"]);
+    expect(principlesForMessage(turns[1].reply[0])).toContain("confirm_before_action");
+  });
+
+  it("labels clarifying questions and corrections as 'says when uncertain'", () => {
+    expect(principlesForMessage(ask("ANALYST", "Why is Amazon bad?").reply[0])).toContain(
+      "say_when_uncertain",
+    );
+    expect(
+      principlesForMessage(ask("ANALYST", "Why did ROAS drop on Flipkart?").reply[0]),
+    ).toContain("say_when_uncertain");
+  });
+});

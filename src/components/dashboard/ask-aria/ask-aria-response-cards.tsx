@@ -25,8 +25,10 @@ import {
   type NormalizedAskAriaInsightSection,
 } from "./ask-aria-insight-sections";
 import { useAskAria } from "./ask-aria-context";
+import { PRINCIPLE_LABELS, principlesForMessage } from "./ask-aria-principles";
 import type {
   AskAriaActionDraft,
+  AskAriaAnswerSource,
   AskAriaClarificationChoice,
   AskAriaHandoff,
   AskAriaInsightSection,
@@ -41,6 +43,7 @@ export function AskAriaMessageList({
   onHandoff,
   onProactivePrompt,
   onClarificationChoice,
+  showDesignNotes = false,
 }: {
   messages: AskAriaMessage[];
   onConfirmAction: (draft: AskAriaActionDraft) => void;
@@ -49,6 +52,7 @@ export function AskAriaMessageList({
   onHandoff: (handoff: AskAriaHandoff) => void;
   onProactivePrompt: (prompt: string) => void;
   onClarificationChoice: (choice: AskAriaClarificationChoice) => void;
+  showDesignNotes?: boolean;
 }) {
   const { dismissedMonitorAlertIds } = useAskAria();
   const visibleMessages = messages.filter(
@@ -66,20 +70,70 @@ export function AskAriaMessageList({
   }
 
   return (
-    <div className="space-y-4 min-w-0">
+    <div
+      className="space-y-4 min-w-0"
+      role="log"
+      aria-live="polite"
+      aria-label="Conversation with Ask Aria"
+    >
       {visibleMessages.map((message) => (
-        <AskAriaMessageCard
-          key={message.id}
-          message={message}
-          onConfirmAction={onConfirmAction}
-          onCancelAction={onCancelAction}
-          onEditAction={onEditAction}
-          onHandoff={onHandoff}
-          onProactivePrompt={onProactivePrompt}
-          onClarificationChoice={onClarificationChoice}
-        />
+        <div key={message.id} className="min-w-0">
+          <AskAriaMessageCard
+            message={message}
+            onConfirmAction={onConfirmAction}
+            onCancelAction={onCancelAction}
+            onEditAction={onEditAction}
+            onHandoff={onHandoff}
+            onProactivePrompt={onProactivePrompt}
+            onClarificationChoice={onClarificationChoice}
+          />
+          {showDesignNotes ? <DesignNotes message={message} /> : null}
+        </div>
       ))}
     </div>
+  );
+}
+
+function DesignNotes({ message }: { message: AskAriaMessage }) {
+  const principles = principlesForMessage(message);
+  if (!principles.length) return null;
+  return (
+    <ul
+      className="mt-1.5 flex flex-wrap gap-1"
+      aria-label="Design principles shown in this answer"
+    >
+      {principles.map((principle) => (
+        <li
+          key={principle}
+          className="rounded-sm border border-dashed border-accent-interactive px-1.5 py-0.5 type-small text-text-secondary"
+        >
+          ✓ {PRINCIPLE_LABELS[principle]}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function SourceLine({ source }: { source?: AskAriaAnswerSource }) {
+  if (!source) return null;
+  return (
+    <p className="mt-3 type-small text-text-tertiary">
+      <span className="font-medium text-text-secondary">Source:</span>{" "}
+      {source.dataset} · {source.scope} · {source.period}{" "}
+      <span className="whitespace-nowrap">vs {source.comparison}</span>
+    </p>
+  );
+}
+
+function CaveatNote({ caveat }: { caveat?: string }) {
+  if (!caveat) return null;
+  return (
+    <p
+      role="note"
+      className="mt-2 rounded-md border-l-2 border-warning bg-background-secondary px-2.5 py-2 type-small text-text-primary"
+    >
+      {caveat}
+    </p>
   );
 }
 
@@ -595,9 +649,10 @@ function HandoffButtons({
   onHandoff: (handoff: AskAriaHandoff) => void;
 }) {
   if (!handoffs?.length) return null;
+  // One answer, one primary next step; follow-up questions live below the thread.
   return (
     <div className="mt-3 flex flex-wrap gap-2">
-      {handoffs.map((handoff) => (
+      {handoffs.slice(0, 1).map((handoff) => (
         <Button
           key={`${handoff.label}-${handoff.platformId ?? handoff.productId}`}
           type="button"
@@ -676,13 +731,15 @@ function InsightAccordionCard({
   message: Extract<AskAriaMessage, { kind: "insight" }>;
   onHandoff: (handoff: AskAriaHandoff) => void;
 }) {
-  const { meta, accordion } = splitMetaSections(message.sections);
-
-  const metaLines = meta.flatMap((section) => section.lines);
+  // Period & scope now show in the always-visible source line; the
+  // "what can I do now" section is replaced by the single next-step button.
+  const { accordion: allSections } = splitMetaSections(message.sections);
+  const accordion = allSections.filter((section) => section.id !== "next_action");
 
   return (
     <div className="rounded-md border border-border px-3 py-3">
       <p className="type-label text-text-tertiary">{message.title}</p>
+      <CaveatNote caveat={message.caveat} />
       <p className="mt-2 type-body font-medium leading-snug text-text-primary">
         {message.summary}
       </p>
@@ -714,15 +771,7 @@ function InsightAccordionCard({
         </div>
       ) : null}
 
-      {metaLines.length ? (
-        <div className="mt-3">
-          <AccordionBlock
-            panelId={`insight-meta-${message.id}`}
-            title="Period & scope"
-            lines={metaLines}
-          />
-        </div>
-      ) : null}
+      <SourceLine source={message.source} />
 
       <div className="mt-3 space-y-1">
         {accordion.map((section) => (
@@ -754,6 +803,7 @@ function RecommendationAccordionCard({
       <p className="mt-2 type-body font-medium leading-snug text-text-primary">
         {message.observation}
       </p>
+      <SourceLine source={message.source} />
       <div className="mt-3 space-y-1">
         <AccordionBlock
           panelId={`rec-${message.id}-why`}
@@ -780,7 +830,7 @@ function RecommendationAccordionCard({
         {message.nextAction ? (
           <AccordionBlock
             panelId={`rec-${message.id}-next`}
-            title="What can I do now?"
+            title="Next step"
             lines={[message.nextAction]}
           />
         ) : null}

@@ -30,6 +30,29 @@ function shouldShowSuggestions(
   return false;
 }
 
+const DESIGN_NOTES_KEY = "ask-aria-design-notes";
+
+/** Remembers the "Design notes" toggle per browser; works without storage too. */
+function useDesignNotesPreference(): [boolean, (value: boolean) => void] {
+  const [value, setValue] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return window.localStorage.getItem(DESIGN_NOTES_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const update = (next: boolean) => {
+    setValue(next);
+    try {
+      window.localStorage.setItem(DESIGN_NOTES_KEY, next ? "1" : "0");
+    } catch {
+      // Storage blocked: the toggle still works for this visit.
+    }
+  };
+  return [value, update];
+}
+
 export function AskAriaPanel() {
   const {
     open,
@@ -52,6 +75,7 @@ export function AskAriaPanel() {
 
   const [suggestionsExpanded, setSuggestionsExpanded] = useState(false);
   const [commandCenterOpen, setCommandCenterOpen] = useState(false);
+  const [showDesignNotes, setShowDesignNotes] = useDesignNotesPreference();
 
   const lastIsAssistant = useMemo(() => {
     const last = messages[messages.length - 1];
@@ -101,12 +125,25 @@ export function AskAriaPanel() {
               Ask Aria
             </h2>
             <p className="type-small text-text-secondary">
-              Your commerce intelligence assistant
+              Scripted prototype · synthetic data
             </p>
             <AskAriaConnectedToolsLink
               onOpenCommandCenter={() => setCommandCenterOpen(true)}
             />
           </div>
+          <button
+            type="button"
+            onClick={() => setShowDesignNotes(!showDesignNotes)}
+            aria-pressed={showDesignNotes}
+            className={cn(
+              "ml-auto inline-flex min-h-11 shrink-0 items-center rounded-md border px-2.5 type-small transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-interactive",
+              showDesignNotes
+                ? "border-accent-interactive bg-background-secondary text-text-primary"
+                : "border-border text-text-secondary hover:text-text-primary",
+            )}
+          >
+            Design notes
+          </button>
           <button
             type="button"
             onClick={closePanel}
@@ -151,6 +188,7 @@ export function AskAriaPanel() {
                 onHandoff={applyHandoff}
                 onProactivePrompt={runProactivePrompt}
                 onClarificationChoice={handleClarificationChoice}
+                showDesignNotes={showDesignNotes}
               />
               <AskAriaContextualSuggestions visible />
               <AskAriaActionHistory entries={actionLog} />

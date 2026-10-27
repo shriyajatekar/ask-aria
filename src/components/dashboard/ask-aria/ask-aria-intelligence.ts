@@ -436,7 +436,11 @@ function buildPlatformComparisonMessage(
       role === "CXO"
         ? "Platform movement — summary"
         : "Platform comparison",
-    summary: `Largest ${metricName(metricId)} shifts across ${scope.scopeLabel} in the workspace.`,
+    summary: top
+      ? growthQuestion
+        ? `${top.name} grew fastest: ${metricName(metricId)} ${formatPct(top.pct)} vs the comparison period.`
+        : `${top.name} moved most: ${metricName(metricId)} ${formatPct(top.pct)} vs the comparison period.`
+      : `No ${metricName(metricId)} data for ${scope.scopeLabel} in the current filters.`,
     sections: prependAnalysisSections(context, scope, [
       insightSection("platforms", "Platforms", lines),
     ]),
@@ -866,12 +870,22 @@ function buildTemporalMessage(
             "Use campaign and product views to validate the evidence before taking action.",
           ];
 
+  // Cite the window actually analysed, not the dashboard's date range.
+  const windowContext = {
+    ...context,
+    dateRange: { start: rangeStart, end: rangeEnd },
+    comparisonPeriod: { start: baselineStart, end: baselineEnd },
+  };
+  const lead = metricLines[0];
+
   return {
     id: createMessageId(),
     kind: "insight",
     title,
-    summary: `${metricName(focusMetric)} and related metrics for ${platformLabel}, compared with the prior baseline window in the synthetic dataset.`,
-    sections: prependAnalysisSections(context, scope, [
+    summary: lead
+      ? `${lead.label} was ${lead.value} for ${platformLabel} (${lead.change} vs the window before).`
+      : `No data for ${platformLabel} in this window.`,
+    sections: prependAnalysisSections(windowContext, scope, [
       insightSection("interpretation", "Interpretation", interpretationLines),
     ]),
     metrics: metricLines,
@@ -1315,7 +1329,72 @@ function buildMonitorListingResponse(monitors: AriaMonitor[]): AskAriaMessage {
   };
 }
 
+export const DEMO_DATASET_LABEL = "Synthetic demo data";
+
+/**
+ * "Always show the source": every analysis answer cites the dataset, scope
+ * and the exact periods compared, taken from the sections it was built from.
+ */
+function attachSource(
+  message: AskAriaMessage,
+  context: AskAriaFullContext,
+  memory: AskAriaInvestigationMemory,
+): AskAriaMessage {
+  if (message.kind !== "insight" && message.kind !== "recommendation") {
+    return message;
+  }
+  if (message.source) return message;
+  const sections = message.kind === "insight" ? message.sections : [];
+  const periods = sections.find((s) => s.id === "periods_analyzed")?.lines ?? [];
+  const scopeLine = sections.find((s) => s.id === "scope")?.lines[0];
+  const fallback = buildPeriodTransparencySection(context).lines;
+  const strip = (line: string | undefined) =>
+    (line ?? "").replace(/^[^:]+:\s*/, "").replace(" → ", " – ");
+  const platform = memory.lastPlatform ?? memory.platformId ?? context.platform;
+  const scope = scopeLine
+    ? strip(scopeLine)
+    : platform && platform !== "all"
+      ? PLATFORM_BY_ID[platform]?.name ?? platform
+      : "all platforms";
+  return {
+    ...message,
+    source: {
+      dataset: DEMO_DATASET_LABEL,
+      scope,
+      period: strip(periods[0] ?? fallback[0]),
+      comparison: strip(periods[1] ?? fallback[1]),
+    },
+  };
+}
+
 export function processAskAriaMessage(
+  text: string,
+  context: AskAriaFullContext,
+  memory: AskAriaInvestigationMemory,
+  role: UserRole = "ANALYST",
+  workspaceConnection?: WorkspaceConnectionState,
+  options?: ProcessAskAriaMessageOptions,
+): {
+  messages: AskAriaMessage[];
+  memory: AskAriaInvestigationMemory;
+} {
+  const result = routeAskAriaMessage(
+    text,
+    context,
+    memory,
+    role,
+    workspaceConnection,
+    options,
+  );
+  return {
+    ...result,
+    messages: result.messages.map((message) =>
+      attachSource(message, context, result.memory),
+    ),
+  };
+}
+
+function routeAskAriaMessage(
   text: string,
   context: AskAriaFullContext,
   memory: AskAriaInvestigationMemory,
