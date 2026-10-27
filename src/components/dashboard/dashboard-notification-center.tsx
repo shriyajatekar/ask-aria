@@ -74,8 +74,8 @@ export function DashboardNotificationCenter() {
       body: situation.summary,
       detail: situation.pastLine,
       timeLabel: situation.severity === "high" ? "Needs attention" : "Worth watching",
-      actionLabel: "Investigate in Aria",
-      onAction: () => runProactivePrompt(situation.investigatePrompt),
+      actionLabel: "Deep dive in Aria",
+      onAction: () => runProactivePrompt(situation.deepDivePrompt),
     }));
     // A confirmed bid change that the trend check flagged.
     const riskyBid = [...messages]

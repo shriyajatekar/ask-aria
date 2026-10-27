@@ -76,7 +76,7 @@ export interface DashboardContextValue {
   applyDatePreset: (preset: DateRangePreset) => void;
 }
 
-const DEFAULT_KPI_METRICS: MetricId[] = [
+export const DEFAULT_KPI_METRICS: MetricId[] = [
   "gross_sales",
   "orders",
   "conversion_rate",

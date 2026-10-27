@@ -75,6 +75,15 @@ function latestFinding(
 ): { title: string; lines: string[] } {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const m = messages[i];
+    if (m.kind === "deep_dive") {
+      const source = m.source
+        ? `Source: ${m.source.dataset} · ${m.source.scope} · ${m.source.period} vs ${m.source.comparison}`
+        : undefined;
+      return {
+        title: m.title,
+        lines: [m.summary, m.pastLine, `Suggested next step: ${m.suggestion}`, ...(source ? [source] : [])],
+      };
+    }
     if (m.kind === "insight" || m.kind === "rca" || m.kind === "situation") {
       const source = m.source
         ? `Source: ${m.source.dataset} · ${m.source.scope} · ${m.source.period} vs ${m.source.comparison}`

@@ -602,6 +602,8 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
         targetConversationId,
       );
       setInputValue("");
+      // Prompts started outside the panel (bell, KPI cards) must show the answer.
+      setOpen(true);
     },
     [
       appendMessages,

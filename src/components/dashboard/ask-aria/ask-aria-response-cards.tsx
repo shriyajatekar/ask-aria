@@ -261,6 +261,10 @@ function AskAriaMessageCard({
     return <SituationCard message={message} onHandoff={onHandoff} />;
   }
 
+  if (message.kind === "deep_dive") {
+    return <DeepDiveCard message={message} onHandoff={onHandoff} />;
+  }
+
   if (message.kind === "recommendation") {
     return (
       <RecommendationAccordionCard
@@ -825,6 +829,149 @@ function InsightAccordionCard({
 
       <HandoffButtons handoffs={message.handoffs} onHandoff={onHandoff} />
     </div>
+  );
+}
+
+function DeepDiveStep({
+  number,
+  title,
+  children,
+}: {
+  number: number;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <li className="relative pl-7">
+      <span
+        className="absolute left-0 top-0 flex h-5 w-5 items-center justify-center rounded-full bg-accent-subtle type-small font-medium text-accent-interactive"
+        aria-hidden
+      >
+        {number}
+      </span>
+      <h3 className="type-label text-text-primary">{title}</h3>
+      <div className="mt-1">{children}</div>
+    </li>
+  );
+}
+
+/**
+ * One-click deep dive: five steps in reading order, then actions. Reuses
+ * the RCA bars so the "why" and "where" look the same as a single RCA.
+ */
+function DeepDiveCard({
+  message,
+  onHandoff,
+}: {
+  message: Extract<AskAriaMessage, { kind: "deep_dive" }>;
+  onHandoff: (handoff: AskAriaHandoff) => void;
+}) {
+  const { rca } = message;
+  const whereRows = [...rca.platforms, ...rca.products];
+  return (
+    <article className="rounded-md border border-border px-3 py-3" aria-label={message.title}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="type-label text-text-tertiary">{message.title}</p>
+        <span className="rounded-sm border border-border px-1.5 py-0.5 type-small text-text-secondary">
+          {CONFIDENCE_LABEL[rca.confidence]}
+        </span>
+      </div>
+      <CaveatNote caveat={message.caveat} />
+
+      <ol className="mt-3 space-y-4">
+        <DeepDiveStep number={1} title="What happened">
+          <p className="type-body font-medium leading-snug text-text-primary">{message.summary}</p>
+          <div className="mt-2 grid grid-cols-3 gap-1.5">
+            {message.metrics.map((metric) => (
+              <div key={metric.label} className="rounded-md bg-background-secondary px-2 py-1.5">
+                <p className="truncate type-small text-text-secondary">{metric.label}</p>
+                <p className="type-body-medium tabular-nums text-text-primary">{metric.value}</p>
+                <p
+                  className={cn(
+                    "type-small tabular-nums",
+                    metric.direction === "down" ? "text-error" : "text-text-secondary",
+                  )}
+                >
+                  {metric.direction === "up" ? "↑ " : metric.direction === "down" ? "↓ " : ""}
+                  {metric.change?.replace(/^[+-]/, "")}
+                </p>
+              </div>
+            ))}
+          </div>
+        </DeepDiveStep>
+
+        <DeepDiveStep number={2} title="Why">
+          <p className="type-small font-mono text-text-secondary">{rca.formula}</p>
+          <ul className="mt-1.5 space-y-1.5">
+            {rca.drivers.map((driver) => (
+              <li key={driver.label}>
+                <div className="flex items-baseline justify-between gap-2 type-small">
+                  <span className="text-text-primary">{driver.label}</span>
+                  <span className="tabular-nums text-text-secondary">
+                    {driver.changePct} ·{" "}
+                    {driver.role === "offset"
+                      ? `offset ${Math.abs(driver.sharePct).toFixed(0)}%`
+                      : `${Math.abs(driver.sharePct).toFixed(0)}% of change`}
+                  </span>
+                </div>
+                <ShareBar sharePct={driver.sharePct} role={driver.role} />
+              </li>
+            ))}
+          </ul>
+        </DeepDiveStep>
+
+        {whereRows.length ? (
+          <DeepDiveStep number={3} title="Where">
+            <ul className="space-y-1.5">
+              {whereRows.map((row) => (
+                <li key={row.label} className="flex items-center gap-2 type-small">
+                  <span className="w-36 shrink-0 truncate text-text-primary" title={row.label}>
+                    {row.label}
+                  </span>
+                  <ShareBar sharePct={row.sharePct} role="cause" />
+                  <span className="w-9 shrink-0 text-right tabular-nums text-text-secondary">
+                    {Math.round(row.sharePct)}%
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </DeepDiveStep>
+        ) : null}
+
+        <DeepDiveStep number={whereRows.length ? 4 : 3} title="Has it happened before?">
+          <p className="type-small text-text-secondary">{message.pastLine}</p>
+        </DeepDiveStep>
+
+        <DeepDiveStep number={whereRows.length ? 5 : 4} title="What to do">
+          <p className="type-small text-text-primary">{message.suggestion}</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {message.actions.map((action, index) => (
+              <Button
+                key={action.label}
+                type="button"
+                size="sm"
+                variant={index === 0 ? "primary" : "secondary"}
+                onClick={() => onHandoff(action)}
+              >
+                {action.label}
+              </Button>
+            ))}
+          </div>
+        </DeepDiveStep>
+      </ol>
+
+      <div className="mt-3 space-y-1">
+        {rca.ruledOut.length ? (
+          <AccordionBlock panelId={`dd-${message.id}-ruled-out`} title="Ruled out" lines={rca.ruledOut} />
+        ) : null}
+        <AccordionBlock
+          panelId={`dd-${message.id}-confidence`}
+          title="How sure is this?"
+          lines={[rca.confidenceReason, ...rca.otherSignals]}
+        />
+      </div>
+      <SourceLine source={message.source} />
+    </article>
   );
 }
 

@@ -52,6 +52,7 @@ The design decisions:
   - follow-ups that keep context
   - report, spreadsheet and email drafts with confirm-before-send
   - monitors (simulated)
+- **One-click deep dive** from any KPI card, alert or the bell: what happened → why → where → has it happened before → what to do, in one card with report, task and share actions.
 - **Root-cause analysis**: a driver tree (Gross Sales = sessions × conversion × sales per order; ROAS = sales per click ÷ cost per click) that splits a change exactly between drivers, traces it to platforms and products, lists what was ruled out, and states its confidence. Exportable as a report.
 - **Situation alerts** in the notification bell and the chat: material drops, what happened the last time something similar happened in the data (and how it recovered), and a suggested next step. When there is no precedent, Aria says so.
 - **Risky-bid warning**: a bid change (for example ₹5 at 11:50 PM) is checked against the last 7 days before you confirm.
@@ -60,7 +61,7 @@ The design decisions:
 - A **Design notes** toggle that labels each answer with the principles it shows, so a reviewer can check the design against the live demo.
 - A **graphite and copper** visual system: IBM Plex type, WCAG AA text contrast everywhere, chart colours at 3:1, calm motion that turns off for reduced-motion users.
 - A public **design system** page.
-- **80 automated tests** covering question routing, follow-up context, the "say when uncertain" behaviour, the source line on every answer, answer wording, the golden path, the Google demo-only switch, the root-cause maths (parts add up to the whole), alerts, bid risk, team actions, the AI fallback and its rate limits, and colour contrast.
+- **89 automated tests** covering question routing, follow-up context, the "say when uncertain" behaviour, the source line on every answer, answer wording, the golden path, the Google demo-only switch, the root-cause maths (parts add up to the whole), alerts, bid risk, team actions, the AI fallback and its rate limits, and colour contrast.
 
 ## 5. How it works (plain language)
 
@@ -76,9 +77,9 @@ The design decisions:
 
 - **Answers are not AI-generated.** They are calculated and templated from synthetic data. An optional OpenAI model only maps unusual phrasing onto Aria's question types. Its usage limits are kept in server memory per running instance, so the real spending ceiling must be set as a monthly budget in the OpenAI project. The default model name (`gpt-4o-mini`) should be checked against OpenAI's current list.
 - **Root cause is arithmetic, not causation.** The driver tree shows which parts of the formula moved, not why customers behaved differently. Stock and Buy Box are shown as "also moved" signals, not proven causes.
-- **Alerts and past playbooks come from about 10 weeks of synthetic data,** so precedents are few and sometimes much smaller than today's drop (Aria says so).
+- **Alerts and past playbooks come from about 11 weeks of synthetic data,** so precedents are few and sometimes much smaller than today's drop (Aria says so).
 - **Bid checks use daily data only.** There is no hourly data, so Aria makes no claims about late-night traffic, and no real current bids are stored; it compares against the actual cost per click.
-- **Synthetic data, about 10 weeks** (2 Dec 2025 – 15 Feb 2026). Patterns in it were designed for the demo, and Aria says when the history is too short to judge.
+- **Synthetic data, about 11 weeks, rolling.** The timeline always ends yesterday so the dashboard shows the real last 30 days, but the numbers are a fixed synthetic story replayed on current dates (each day keeps its original random seed); only weekends follow the real calendar. Patterns were designed for the demo, and Aria says when the history is too short to judge.
 - **Never tested with real users.** There are no usage numbers or research results from this demo.
 - **Time saved is an estimate, not a result.** "20–25 minutes to under a minute" was the goal I estimated for the original concept. Nothing in this demo measures it.
 - **Questions outside the script** get an honest "I'm not sure" with suggestions. Free-form phrasing works only as far as the rules cover it.

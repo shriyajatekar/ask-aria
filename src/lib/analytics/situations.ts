@@ -73,7 +73,7 @@ function rcaTreeFor(metric: SituationMetric): RcaMetricId {
 }
 
 /** Suggestions keyed by the driver that explains the drop. */
-const SUGGESTIONS: Record<string, string> = {
+export const SUGGESTIONS: Record<string, string> = {
   cpc: "Cost per click rose: review bids on the highest-spend campaigns before raising budgets.",
   sales_per_click:
     "Ads convert to fewer sales per click: check prices, listings and stock on the top advertised products.",
@@ -155,6 +155,13 @@ export function findPastEpisode(
   return null;
 }
 
+export function suggestionForDriver(driverId: string | undefined): string {
+  return (
+    (driverId && SUGGESTIONS[driverId]) ??
+    "Run a root-cause analysis to see which driver moved."
+  );
+}
+
 export function detectSituations(
   allRecords: PerformanceRecord[],
   period: DateRange,
@@ -200,9 +207,7 @@ export function detectSituations(
           ? { id: driver.id, label: driver.label, changePct: driver.changePct }
           : null,
         pastEpisode: findPastEpisode(allRecords, platformId, metric, period.start, datasetStart),
-        suggestion:
-          (driver && SUGGESTIONS[driver.id]) ??
-          "Run a root-cause analysis to see which driver moved.",
+        suggestion: suggestionForDriver(driver?.id),
       });
     }
   }

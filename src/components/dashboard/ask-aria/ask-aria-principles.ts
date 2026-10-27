@@ -38,6 +38,20 @@ export function principlesForMessage(message: AskAriaMessage): AriaPrinciple[] {
       if (message.handoffs?.length) shown.push("offer_next_step");
       if (message.caveat) shown.push("say_when_uncertain");
       break;
+    case "deep_dive":
+      if (leadsWithInsight(message.summary)) shown.push("lead_with_insight");
+      if (message.source) shown.push("show_source");
+      shown.push("one_answer");
+      if (message.actions.length) shown.push("offer_next_step");
+      if (
+        message.caveat ||
+        !message.hasPrecedent ||
+        message.rca.confidence !== "high" ||
+        /rough guide|had not recovered/.test(message.pastLine)
+      ) {
+        shown.push("say_when_uncertain");
+      }
+      break;
     case "situation":
       if (leadsWithInsight(message.summary)) shown.push("lead_with_insight");
       if (message.source) shown.push("show_source");

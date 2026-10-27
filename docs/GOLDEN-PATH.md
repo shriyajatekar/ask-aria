@@ -8,7 +8,7 @@ A tested path through the demo: 4 questions per role, asked in order, plus one v
 - Turn on **Design notes** (top of the chat panel) if you want each answer labelled with the principles it shows.
 - Start a **New** conversation between roles, so follow-ups don't carry over.
 
-The numbers below come from the synthetic dataset (17 Jan – 15 Feb 2026 vs the 30 days before). They are demo data, not results.
+The numbers below come from the synthetic dataset: the last 30 days vs the 30 before. The timeline rolls forward (the data always ends yesterday), so dates change daily; the story stays the same and figures may shift by about a percentage point as real weekends rotate. They are demo data, not results.
 
 ---
 
@@ -18,7 +18,7 @@ The numbers below come from the synthetic dataset (17 Jan – 15 Feb 2026 vs the
 |---|---|---|---|
 | 1 | Why did ROAS drop on Amazon? | "ROAS on Amazon fell 11.6% to 3.08 vs the comparison period." | **Leads with the insight**; the **Source** line names the data, scope and both periods |
 | 2 | Run a root-cause analysis (or tap the button) | "Cost per click drives 77% of the ROAS drop on Amazon: it rose 10.0% (₹52.85 → ₹58.13)." | **Driver tree**: ROAS = sales per click ÷ cost per click, a waterfall of what explains the drop, the products where it happened, what was ruled out, and a confidence level. Follow-up kept Amazon and ROAS |
-| 3 | Has this happened before? | A note first: the dataset covers about 10 weeks, too short to call a pattern | **Says when uncertain** instead of inventing history |
+| 3 | Has this happened before? | A note first: the dataset covers about 11 weeks, too short to call a pattern | **Says when uncertain** instead of inventing history |
 | 4 | Create an RCA report | A preview of "Root-cause analysis — ROAS (Amazon)" with a **Confirm** button | **Insight → action**, **confirm before acting**. Confirming shows "Demo only: no real document was created." |
 
 ## Key Account Manager (Yuga): from brands to a client email
@@ -47,7 +47,9 @@ The numbers below come from the synthetic dataset (17 Jan – 15 Feb 2026 vs the
 
 ## Extra moments if there's time
 
-- **What needs my attention?** An alert card: "Amazon Gross Sales fell 22.0% … mainly because conversion rate fell 12.4%", then **Last time** (a smaller 5.6% drop in mid-December recovered within 7 days as sessions rose; Aria flags it as only a rough guide), a **suggested next step**, and the next alerts. The bell at the top shows the same alerts.
+- **One-click deep dive.** On the dashboard, click the small search icon on the **ROAS** card (or "Deep dive" on an alert, or in the bell). Aria opens with one card in five steps: what happened → why (driver tree) → where → has it happened before → what to do, with Export report, Create a task and Share on Slack.
+
+- **What needs my attention?** An alert card: "Amazon Gross Sales fell 22.0% … mainly because conversion rate fell 12.4%", then **Last time** (a smaller, roughly 5% drop about two months earlier recovered within 7 days as sessions rose; Aria flags it as only a rough guide), a **suggested next step**, and the next alerts. The bell at the top shows the same alerts.
 - **Set bid to ₹5 at 11:50 pm on Amazon campaign Hydra Glow.** The confirm card warns: "₹5.00 is well below what clicks cost here (₹56.91 on average over the last 7 days), so the ads may stop showing", with a suggestion. The button reads **Confirm anyway**.
 - **Share this on Slack** / **Schedule a review with the client tomorrow at 3pm** / **Create a Jira task and assign it to Raghav** / **Send me a weekly digest.** Each builds its content from the latest finding, previews it, and is clearly simulated.
 

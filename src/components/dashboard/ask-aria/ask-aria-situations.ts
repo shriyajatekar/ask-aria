@@ -3,7 +3,11 @@ import { PERFORMANCE_RECORDS } from "@/data/performance";
 import { PLATFORM_BY_ID } from "@/data/platforms";
 import { PERFORMANCE_DATE_RANGE } from "@/data/scenarios";
 import { formatMetricValue } from "@/lib/ask-aria/monitors";
-import { detectSituations, type Situation } from "@/lib/analytics/situations";
+import {
+  detectSituations,
+  type PastEpisode,
+  type Situation,
+} from "@/lib/analytics/situations";
 import { filterPerformanceRecords } from "@/lib/dashboard/filter-records";
 import type { PlatformId } from "@/types/analytics";
 
@@ -28,6 +32,8 @@ export interface SituationCopy {
   hasPrecedent: boolean;
   suggestion: string;
   investigatePrompt: string;
+  /** One-click deep dive into this metric and platform. */
+  deepDivePrompt: string;
 }
 
 const platformName = (id: PlatformId) => PLATFORM_BY_ID[id]?.name ?? id;
@@ -62,6 +68,34 @@ export function situationsForContext(
   );
 }
 
+/** "Last time on Amazon: …", or that the history has no comparable drop. */
+export function describePastEpisode(
+  past: PastEpisode | null,
+  options: { metricLabel: string; platformName: string; currentChangePct: number },
+): string {
+  const { metricLabel, platformName: name, currentChangePct } = options;
+  if (!past) {
+    return `No comparable drop in the available history (since ${formatDay(PERFORMANCE_DATE_RANGE.start)}), so there's no past playbook to draw on.`;
+  }
+  const where = past.samePlatform
+    ? name
+    : `${platformName(past.platformId)} (no earlier drop on ${name}; this is the closest case)`;
+  const when = `${formatDay(past.dropWindow.start)} – ${formatDay(past.dropWindow.end)}`;
+  const outcome =
+    past.recoveredBy && past.daysToRecover !== null
+      ? `recovered within ${past.daysToRecover} days${
+          past.recoveryDriver
+            ? `, as ${past.recoveryDriver.label.toLowerCase()} ${past.recoveryDriver.changePct >= 0 ? "rose" : "fell"} ${Math.abs(past.recoveryDriver.changePct).toFixed(1)}%`
+            : ""
+        }`
+      : "had not recovered before this period began";
+  const smaller =
+    Math.abs(past.dropPct) < Math.abs(currentChangePct) / 2
+      ? " That drop was much smaller than this one, so treat it as a rough guide."
+      : "";
+  return `Last time on ${where}: ${metricLabel} fell ${Math.abs(past.dropPct).toFixed(1)}% (${when}) and ${outcome}.${smaller}`;
+}
+
 export function describeSituation(situation: Situation): SituationCopy {
   const name = platformName(situation.platformId);
   const metricLabel = METRIC_BY_ID[situation.metric]?.name ?? situation.metric;
@@ -73,28 +107,11 @@ export function describeSituation(situation: Situation): SituationCopy {
       : "";
 
   const past = situation.pastEpisode;
-  let pastLine: string;
-  if (!past) {
-    pastLine = `No comparable drop in the available history (since ${formatDay(PERFORMANCE_DATE_RANGE.start)}), so there's no past playbook to draw on.`;
-  } else {
-    const where = past.samePlatform
-      ? name
-      : `${platformName(past.platformId)} (no earlier drop on ${name}; this is the closest case)`;
-    const when = `${formatDay(past.dropWindow.start)} – ${formatDay(past.dropWindow.end)}`;
-    const outcome =
-      past.recoveredBy && past.daysToRecover !== null
-        ? `recovered within ${past.daysToRecover} days${
-            past.recoveryDriver
-              ? `, as ${past.recoveryDriver.label.toLowerCase()} ${past.recoveryDriver.changePct >= 0 ? "rose" : "fell"} ${Math.abs(past.recoveryDriver.changePct).toFixed(1)}%`
-              : ""
-          }`
-        : "had not recovered before this period began";
-    const smaller =
-      Math.abs(past.dropPct) < Math.abs(situation.changePct) / 2
-        ? " That drop was much smaller than this one, so treat it as a rough guide."
-        : "";
-    pastLine = `Last time on ${where}: ${metricLabel} fell ${Math.abs(past.dropPct).toFixed(1)}% (${when}) and ${outcome}.${smaller}`;
-  }
+  const pastLine = describePastEpisode(past, {
+    metricLabel,
+    platformName: name,
+    currentChangePct: situation.changePct,
+  });
 
   return {
     id: situation.id,
@@ -106,6 +123,7 @@ export function describeSituation(situation: Situation): SituationCopy {
     hasPrecedent: Boolean(past),
     suggestion: situation.suggestion,
     investigatePrompt: `What needs my attention on ${name}?`,
+    deepDivePrompt: `Deep dive into ${metricLabel} on ${name}`,
   };
 }
 
@@ -132,12 +150,7 @@ export function buildSituationMessage(
     severity: copy.severity,
     scopeLabel: platformName(situation.platformId),
     alsoWatching: others.map((s) => describeSituation(s).title),
-    handoffs: [
-      {
-        label: "Run root-cause analysis",
-        prompt: `Run a root-cause analysis for ${situation.metric === "roas" ? "ROAS" : "gross sales"} on ${platformName(situation.platformId)}`,
-      },
-    ],
+    handoffs: [{ label: "Deep dive", prompt: copy.deepDivePrompt }],
     createdAt: Date.now(),
   };
 }

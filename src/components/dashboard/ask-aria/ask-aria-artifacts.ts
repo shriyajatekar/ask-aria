@@ -109,7 +109,10 @@ export function enrichReportDraftFromThread(
   options?: { rcaMetric?: "gross_sales" | "roas" },
 ): Partial<AskAriaActionDraft> {
   // A root-cause report: the thread's latest RCA, or an explicit "RCA report".
-  const lastRca = [...messages].reverse().find((m) => m.kind === "rca");
+  const lastAnalysis = [...messages]
+    .reverse()
+    .find((m) => m.kind === "rca" || m.kind === "deep_dive");
+  const lastRca = lastAnalysis?.kind === "deep_dive" ? lastAnalysis.rca : lastAnalysis;
   const rcaMetric =
     options?.rcaMetric ?? (lastRca?.kind === "rca" ? lastRca.rcaMetric : undefined);
   if (rcaMetric) {

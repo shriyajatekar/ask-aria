@@ -247,6 +247,29 @@ export type AskAriaMessage =
     }
   | {
       id: string;
+      /**
+       * One-click deep dive: what happened → why (driver tree) → where →
+       * has it happened before → what to do, in one card.
+       */
+      kind: "deep_dive";
+      title: string;
+      summary: string;
+      metricLabel: string;
+      scopeLabel: string;
+      metrics: AskAriaMetricLine[];
+      /** The root-cause analysis behind step 2 and 3. */
+      rca: Extract<AskAriaMessage, { kind: "rca" }>;
+      pastLine: string;
+      hasPrecedent: boolean;
+      suggestion: string;
+      caveat?: string;
+      source?: AskAriaAnswerSource;
+      /** Up to three next actions (report, task, share). */
+      actions: AskAriaHandoff[];
+      createdAt: number;
+    }
+  | {
+      id: string;
       kind: "situation";
       /** "Amazon Gross Sales down 22.0%" */
       title: string;

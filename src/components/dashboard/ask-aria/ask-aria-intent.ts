@@ -37,7 +37,8 @@ export type AskAriaIntent =
   | "metric_definition"
   | "unknown"
   | "root_cause_analysis"
-  | "situation_alerts";
+  | "situation_alerts"
+  | "deep_dive";
 
 export function isConfirmPhrase(text: string): boolean {
   const lower = text.toLowerCase().trim();
@@ -268,6 +269,11 @@ function isRecommendationQuery(text: string): boolean {
 }
 
 /** "What needs my attention?", "Any alerts?", "What should I worry about?" */
+/** "Deep dive into ROAS on Amazon", "dig into this", "full analysis" */
+export function isDeepDiveQuery(text: string): boolean {
+  return /\b(deep[- ]?dive|dig (into|deeper)|full (analysis|investigation|picture))\b/i.test(text);
+}
+
 export function isSituationQuery(text: string): boolean {
   return /\b(alerts?|needs? (my )?attention|worry about|be worried about|anything (urgent|wrong)|what's wrong|situations?)\b/i.test(
     text,
@@ -363,6 +369,10 @@ export function classifyIntent(
 
   if (metricDefinitionTerm(trimmed)) {
     return "metric_definition";
+  }
+
+  if (isDeepDiveQuery(trimmed)) {
+    return "deep_dive";
   }
 
   if (isRcaQuery(trimmed)) {

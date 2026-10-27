@@ -1,5 +1,5 @@
 import { BRANDS } from "@/data/brands";
-import { METRIC_BY_ID } from "@/data/metrics";
+import { METRIC_BY_ID, METRICS } from "@/data/metrics";
 import { PERFORMANCE_RECORDS } from "@/data/performance";
 import { PLATFORMS, PLATFORM_BY_ID } from "@/data/platforms";
 import { PRODUCT_BY_ID } from "@/data/products";
@@ -16,6 +16,7 @@ import {
   type RcaMetricId,
 } from "@/lib/analytics/root-cause";
 import { assessBidRisk } from "@/lib/analytics/bid-risk";
+import { findPastEpisode, suggestionForDriver } from "@/lib/analytics/situations";
 import {
   filterPerformanceRecords,
   getMetricAggregationType,
@@ -59,7 +60,7 @@ import {
   metricDefinitionTerm,
 } from "./ask-aria-intent";
 import { goldenPathChips } from "./ask-aria-golden-path";
-import { buildSituationMessage } from "./ask-aria-situations";
+import { buildSituationMessage, describePastEpisode } from "./ask-aria-situations";
 import { buildCollabDraftPartial, isCollabAction } from "./ask-aria-collab-actions";
 import {
   buildHistoricalSectionLines,
@@ -220,6 +221,8 @@ function metricDelta(
   return { cur, prev, pct, direction: getTrendDirection(cur, prev) };
 }
 
+const METRICS_BY_NAME_LENGTH = [...METRICS].sort((a, b) => b.name.length - a.name.length);
+
 function resolveFocusMetric(
   context: AskAriaFullContext,
   memory: AskAriaInvestigationMemory,
@@ -231,6 +234,12 @@ function resolveFocusMetric(
   if (lower.includes("gross sales")) return "gross_sales";
   if (lower.includes("orders")) return "orders";
   if (lower.includes("acos")) return "acos";
+  // Any other metric named in full ("Sessions", "Buy Box Share"), longest
+  // name first so "Net Sales" wins over "Sales".
+  const named = METRICS_BY_NAME_LENGTH.find((metric) =>
+    lower.includes(metric.name.toLowerCase()),
+  );
+  if (named) return named.id;
   if (memory.activeAnalysisContext?.metricId) {
     return memory.activeAnalysisContext.metricId;
   }
@@ -1262,6 +1271,126 @@ function buildRcaMessage(
   };
 }
 
+const DRIVER_ID_BY_LABEL: Record<string, string> = {
+  Sessions: "sessions",
+  "Conversion rate": "conversion",
+  "Sales per order": "sales_per_order",
+  "Ad sales per click": "sales_per_click",
+  "Cost per click": "cpc",
+};
+
+/**
+ * One-click deep dive. Composes the existing engines into one answer:
+ * what happened → why (driver tree) → where → has it happened before →
+ * what to do. No new calculations: every number comes from the same code
+ * as the single answers.
+ */
+function buildDeepDiveMessage(
+  context: AskAriaFullContext,
+  scope: ResolvedQueryScope,
+  metricId: MetricId,
+): AskAriaMessage {
+  const { current, comparison } = filterForScope(context, scope);
+  const primary = metricDelta(current, comparison, metricId);
+  const label = metricName(metricId);
+  const where = scope.scopeLabel === "all platforms" ? "" : ` on ${scope.scopeLabel}`;
+
+  const rca = buildRcaMessage(context, scope, rcaMetricFor(label, metricId));
+  if (rca.kind !== "rca") throw new Error("RCA builder returned the wrong message");
+  const top = rca.drivers.find((d) => d.role === "cause" && d.sharePct > 0);
+
+  const verb = primary.direction === "down" ? "fell" : primary.direction === "up" ? "rose" : "held steady at";
+  const movePct = Math.abs(primary.pct).toFixed(1);
+  const lead =
+    primary.direction === "flat"
+      ? `${label}${where} held steady at ${formatMetricValue(metricId, primary.cur)} vs the comparison period.`
+      : `${label}${where} ${verb} ${movePct}% to ${formatMetricValue(metricId, primary.cur)} vs the comparison period.`;
+  const summary = top ? `${lead} ${top.label} explains ${Math.round(top.sharePct)}% of the move.` : lead;
+
+  // History: the last comparable drop on this platform (or the platform
+  // that moved most when looking at all platforms).
+  const lookupPlatform: PlatformId | undefined =
+    scope.mode === "single_platform"
+      ? scope.platformIds[0]
+      : extractPlatformIdsFromText(rca.platforms[0]?.label ?? "")[0];
+  const situationMetric =
+    metricId === "roas" || metricId === "acos"
+      ? "roas"
+      : metricId === "conversion_rate"
+        ? "conversion_rate"
+        : "gross_sales";
+  let pastLine: string;
+  let hasPrecedent = false;
+  if (primary.direction !== "down") {
+    pastLine = "This isn't a drop, so there's no earlier drop to compare it with.";
+  } else if (!lookupPlatform) {
+    pastLine = "No single platform stands out, so there's no one history to compare with.";
+  } else {
+    const records = filterPerformanceRecords(PERFORMANCE_RECORDS, {
+      brandId: context.brandId,
+      category: context.category,
+      subcategory: context.subcategory,
+      productId: context.productId,
+    });
+    const past = findPastEpisode(
+      records,
+      lookupPlatform,
+      situationMetric,
+      context.dateRange.start,
+      PERFORMANCE_DATE_RANGE.start,
+    );
+    hasPrecedent = Boolean(past);
+    const lookedAt =
+      scope.mode === "single_platform"
+        ? ""
+        : `Checked ${PLATFORM_BY_ID[lookupPlatform]?.name ?? lookupPlatform}, where most of the move happened. `;
+    pastLine = lookedAt + describePastEpisode(past, {
+      metricLabel: metricName(situationMetric),
+      platformName: PLATFORM_BY_ID[lookupPlatform]?.name ?? lookupPlatform,
+      currentChangePct: primary.pct,
+    });
+  }
+
+  const suggestion =
+    primary.direction === "down"
+      ? suggestionForDriver(top ? DRIVER_ID_BY_LABEL[top.label] : undefined)
+      : "This is moving the right way. Set a monitor so you hear if it turns.";
+
+  const related = ([metricId, "gross_sales", "roas", "conversion_rate"] as MetricId[])
+    .filter((id, index, all) => all.indexOf(id) === index)
+    .slice(0, 3)
+    .map((id) => {
+      const delta = metricDelta(current, comparison, id);
+      return {
+        label: metricName(id),
+        value: formatMetricValue(id, delta.cur),
+        change: formatPct(delta.pct),
+        direction: delta.direction,
+      };
+    });
+
+  return {
+    id: createMessageId(),
+    kind: "deep_dive",
+    title: `Deep dive — ${label}${where}`,
+    summary,
+    metricLabel: label,
+    scopeLabel: scope.scopeLabel,
+    metrics: related,
+    rca,
+    pastLine,
+    hasPrecedent,
+    suggestion,
+    caveat: rca.caveat,
+    actions: [
+      { label: "Export report", prompt: "Create an RCA report" },
+      { label: "Create a task", prompt: "Create a task for this" },
+      { label: "Share on Slack", prompt: "Share this on Slack" },
+    ],
+    createdAt: Date.now(),
+  };
+}
+
 function executiveSummaryTurn(
   userMessage: AskAriaMessage,
   context: AskAriaFullContext,
@@ -1482,7 +1611,8 @@ function attachSource(
     message.kind !== "insight" &&
     message.kind !== "recommendation" &&
     message.kind !== "rca" &&
-    message.kind !== "situation"
+    message.kind !== "situation" &&
+    message.kind !== "deep_dive"
   ) {
     return message;
   }
@@ -1494,7 +1624,8 @@ function attachSource(
   const strip = (line: string | undefined) =>
     (line ?? "").replace(/^[^:]+:\s*/, "").replace(" → ", " – ");
   const platform = memory.lastPlatform ?? memory.platformId ?? context.platform;
-  const scope = message.kind === "rca" || message.kind === "situation"
+  const scope =
+    message.kind === "rca" || message.kind === "situation" || message.kind === "deep_dive"
     ? message.scopeLabel
     : scopeLine
     ? strip(scopeLine)
@@ -2298,6 +2429,32 @@ function routeAskAriaMessage(
     return {
       messages: [userMessage, insight.message],
       memory: insight.memory,
+    };
+  }
+
+  if (intent === "deep_dive") {
+    // Same platform as the question names, else the previous answer's, else
+    // the dashboard's current platform.
+    const named = extractPlatformIdsFromText(trimmed)[0];
+    const fromMemory =
+      memory.lastPlatform && memory.lastPlatform !== "all" ? memory.lastPlatform : undefined;
+    const fromDashboard = context.platform !== "all" ? context.platform : undefined;
+    const platformId = named ?? fromMemory ?? fromDashboard;
+    const diveScope = platformId ? singlePlatformScope(platformId) : scope;
+    const diveMetric = resolveFocusMetric(context, memory, trimmed);
+    const divePlatform = memoryPlatformFromScope(diveScope, context);
+    return {
+      messages: [userMessage, buildDeepDiveMessage(context, diveScope, diveMetric)],
+      memory: {
+        ...memory,
+        topic: "metric_change",
+        metricId: diveMetric,
+        lastMetric: diveMetric,
+        lastTopic: "deep_dive",
+        platformId: divePlatform,
+        lastPlatform: divePlatform,
+        activeAnalysisContext: buildActiveAnalysisContext(context, diveScope, diveMetric, undefined),
+      },
     };
   }
 
