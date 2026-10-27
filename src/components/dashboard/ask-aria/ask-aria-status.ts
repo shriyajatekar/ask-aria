@@ -74,6 +74,8 @@ export function actionPreviewSubtitle(draft: AskAriaActionDraft): string {
 }
 
 export function confirmButtonLabel(draft: AskAriaActionDraft): string {
+  // A risky bid can still go ahead, but the button says so.
+  if (draft.bidRisk?.level === "high") return "Confirm anyway";
   if (draft.type === "send_email") return "Confirm";
   if (draft.type === "create_monitor" || draft.type === "create_alert") {
     return "Confirm";

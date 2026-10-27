@@ -12,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useDashboard } from "@/contexts/dashboard-context";
+import { PLATFORM_BY_ID } from "@/data/platforms";
 import { cn } from "@/lib/cn";
 
 import { extractLastWorkspaceArtifact } from "./ask-aria/ask-aria-artifacts";
@@ -76,6 +77,32 @@ export function DashboardNotificationCenter() {
       actionLabel: "Investigate in Aria",
       onAction: () => runProactivePrompt(situation.investigatePrompt),
     }));
+    // A confirmed bid change that the trend check flagged.
+    const riskyBid = [...messages]
+      .reverse()
+      .find(
+        (m) =>
+          m.kind === "action_result" &&
+          (m.status === "scheduled" || m.status === "completed") &&
+          m.draft.bidRisk &&
+          m.draft.bidRisk.level !== "none",
+      );
+    if (riskyBid?.kind === "action_result" && riskyBid.draft.bidRisk) {
+      const { draft } = riskyBid;
+      const risk = riskyBid.draft.bidRisk;
+      alerts.unshift({
+        id: `bid-risk-${draft.id}`,
+        title: `${draft.isImmediate ? "Bid change" : "Scheduled bid"} may be risky`,
+        body: `₹${draft.newBid} on ${draft.campaignName ?? "the campaign"}${draft.isImmediate ? "" : ` · ${draft.scheduledLabel ?? "scheduled"}`}. ${risk.reasons[0] ?? ""}`,
+        detail: risk.suggestion ?? undefined,
+        timeLabel: risk.level === "high" ? "Needs attention" : "Worth watching",
+        actionLabel: "Review in Aria",
+        onAction: () =>
+          runProactivePrompt(
+            `Set bid to ₹${draft.newBid} on ${PLATFORM_BY_ID[draft.platformId ?? "amazon"]?.name ?? "Amazon"} campaign ${draft.campaignName ?? ""}`.trim(),
+          ),
+      });
+    }
     if (artifact?.url) {
       alerts.push({
         id: "report-artifact",

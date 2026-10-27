@@ -291,6 +291,31 @@ function AskAriaMessageCard({
         <p className="mt-1 type-small text-text-secondary">
           {actionPreviewSubtitle(draft)}
         </p>
+        {draft.bidRisk && draft.bidRisk.level !== "none" ? (
+          <div
+            role="alert"
+            className={cn(
+              "mt-3 rounded-md border-l-2 bg-background-secondary px-3 py-2",
+              draft.bidRisk.level === "high" ? "border-error" : "border-warning",
+            )}
+          >
+            <p className="type-label text-text-primary">
+              {draft.bidRisk.level === "high"
+                ? "This bid looks risky right now"
+                : "Check the trend before confirming"}
+            </p>
+            <ul className="mt-1 list-disc space-y-0.5 pl-5 type-small text-text-secondary">
+              {draft.bidRisk.reasons.map((reason) => (
+                <li key={reason}>{reason}</li>
+              ))}
+            </ul>
+            {draft.bidRisk.suggestion ? (
+              <p className="mt-1.5 type-small text-text-primary">
+                Suggestion: {draft.bidRisk.suggestion}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         {draft.emailPreviewLines?.length ? (
           <div className="mt-3 rounded-md bg-background-secondary px-3 py-2 type-small text-text-secondary whitespace-pre-line">
             {draft.emailPreviewLines.join("\n")}

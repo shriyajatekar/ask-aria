@@ -15,6 +15,7 @@ import {
   type RcaDriver,
   type RcaMetricId,
 } from "@/lib/analytics/root-cause";
+import { assessBidRisk } from "@/lib/analytics/bid-risk";
 import {
   filterPerformanceRecords,
   getMetricAggregationType,
@@ -98,6 +99,7 @@ import {
 } from "./ask-aria-insight-sections";
 import { createMessageId } from "./ask-aria-storage";
 import type {
+  AskAriaActionDraft,
   AskAriaFullContext,
   AskAriaInvestigationMemory,
   AskAriaMessage,
@@ -1147,6 +1149,23 @@ function buildNonAnalysisReply(
   };
 }
 
+/** Bid changes get a trend check before the user confirms them. */
+export function withBidRisk(draft: AskAriaActionDraft): AskAriaActionDraft {
+  const isBid = draft.type === "campaign_bid" || draft.type === "schedule_bid_change";
+  if (!isBid || draft.newBid === undefined || !draft.platformId) return draft;
+  const risk = assessBidRisk(PERFORMANCE_RECORDS, {
+    platformId: draft.platformId,
+    productId: draft.productId,
+    newBid: draft.newBid,
+    currentBid: draft.currentBid,
+    asOf: PERFORMANCE_DATE_RANGE.end,
+  });
+  return {
+    ...draft,
+    bidRisk: { level: risk.level, reasons: risk.reasons, suggestion: risk.suggestion },
+  };
+}
+
 /** RCA covers two driver trees; other metrics map to the tree they sit in. */
 export function rcaMetricFor(text: string, memoryMetric?: MetricId): RcaMetricId {
   if (/\b(roas|acos|cpc|ad spend|ads?)\b/i.test(text)) return "roas";
@@ -1854,7 +1873,7 @@ function routeAskAriaMessage(
           : enrichEmailDraft(partial, context, enrichOptions);
     }
 
-    const draft = buildActionDraft(partial);
+    const draft = withBidRisk(buildActionDraft(partial));
     if (
       actionRequiresWorkspaceTool(draft.type) &&
       !isWorkspaceToolSatisfiedForAction(draft.type, workspaceConnection)

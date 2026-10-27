@@ -50,6 +50,12 @@ export interface AskAriaActionDraft {
   campaignName?: string;
   currentBid?: number;
   newBid?: number;
+  /** Trend check on bid changes, shown before the user confirms. */
+  bidRisk?: {
+    level: "high" | "medium" | "none";
+    reasons: string[];
+    suggestion: string | null;
+  };
   currentBudget?: number;
   newBudget?: number;
   budgetChangePercent?: number;
