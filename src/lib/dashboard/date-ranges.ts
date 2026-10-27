@@ -1,6 +1,6 @@
 import type { DateRange } from "@/types/analytics";
 
-import { PERFORMANCE_DATE_RANGE } from "@/data/scenarios";
+import { COMPLETE_THROUGH, PERFORMANCE_DATE_RANGE } from "@/data/scenarios";
 
 export type DateRangePreset = "7" | "30" | "60" | "custom";
 
@@ -44,7 +44,9 @@ export function resolvePresetRange(
     return clampRangeToDataset(customRange);
   }
 
-  const end = PERFORMANCE_DATE_RANGE.end;
+  // Presets end on the last day every platform has reported, so totals never
+  // mix in days some platforms haven't delivered yet.
+  const end = COMPLETE_THROUGH;
   const endDate = parseDate(end);
   const days = preset === "7" ? 7 : preset === "60" ? 60 : 30;
   const startDate = addDays(endDate, -(days - 1));

@@ -1,7 +1,7 @@
 import { resolveAskAriaStorageScope } from "@/components/dashboard/ask-aria/ask-aria-user-scope";
 import type { AskAriaActionDraft } from "@/components/dashboard/ask-aria/ask-aria-types";
 import { PERFORMANCE_RECORDS } from "@/data/performance";
-import { PERFORMANCE_DATE_RANGE } from "@/data/scenarios";
+import { PERFORMANCE_DATE_RANGE, PLATFORM_DATA_THROUGH } from "@/data/scenarios";
 import {
   evaluateOutcome,
   exampleTrackedAction,
@@ -88,7 +88,8 @@ export function trackableFromDraft(
 /** Outcomes for the user's tracked actions, plus the labelled demo example. */
 export function outcomesFor(tracked: TrackedAction[]): OutcomeResult[] {
   const actions = [...tracked, exampleTrackedAction(PERFORMANCE_DATE_RANGE.end)];
+  // Each check runs up to the last day that platform has reported.
   return actions.map((action) =>
-    evaluateOutcome(action, PERFORMANCE_RECORDS, PERFORMANCE_DATE_RANGE.end),
+    evaluateOutcome(action, PERFORMANCE_RECORDS, PLATFORM_DATA_THROUGH[action.platformId]),
   );
 }

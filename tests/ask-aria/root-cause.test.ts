@@ -63,8 +63,18 @@ describe("root-cause analysis", () => {
 
 describe("root-cause wording", () => {
   it("never names a driver that pushed the other way as the cause", () => {
-    // All platforms: sessions rose while Gross Sales fell.
-    const { current, previous } = slice();
+    // Sessions rose 40% while conversion fell 45%: Gross Sales fell overall,
+    // with a large offset.
+    const record = (date: string, sessions: number, orders: number, sales: number) =>
+      ({
+        date,
+        platformId: "amazon",
+        brandId: "b",
+        productId: "p",
+        metrics: { sessions, orders, gross_sales: sales, ad_sales: 0, ad_spend: 0, ad_clicks: 0 },
+      }) as unknown as (typeof current)[number];
+    const previous = [record("2026-01-01", 1000, 100, 10000)];
+    const current = [record("2026-01-08", 1400, 77, 7700)];
     const rca = analyzeRootCause("gross_sales", current, previous);
     expect(Math.sign(rca.topDriver!.contribution)).toBe(Math.sign(rca.change));
     for (const d of rca.drivers) expect(Math.abs(d.sharePct)).toBeLessThanOrEqual(100.0001);

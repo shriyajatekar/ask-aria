@@ -3,7 +3,11 @@ import { METRIC_BY_ID, METRICS } from "@/data/metrics";
 import { PERFORMANCE_RECORDS } from "@/data/performance";
 import { PLATFORMS, PLATFORM_BY_ID } from "@/data/platforms";
 import { PRODUCT_BY_ID } from "@/data/products";
-import { PERFORMANCE_DATE_RANGE } from "@/data/scenarios";
+import {
+  completeThroughFor,
+  PERFORMANCE_DATE_RANGE,
+  PLATFORM_DATA_THROUGH,
+} from "@/data/scenarios";
 import {
   calculatePercentageChange,
   getTrendDirection,
@@ -205,9 +209,13 @@ function prependAnalysisSections(
   scope: ResolvedQueryScope,
   sections: import("./ask-aria-types").AskAriaInsightSection[],
 ): import("./ask-aria-types").AskAriaInsightSection[] {
+  // Each answer's own window (dashboard period or a time question's window)
+  // is checked against what every platform in scope has reported.
+  const partial = partialDataNote(scope.scopeLabel, context.dateRange.end);
   return [
     buildPeriodTransparencySection(context),
     insightSection("scope", "Scope", [`Analyzed: ${scope.scopeLabel}`]),
+    ...(partial ? [insightSection("data_freshness", "Data freshness", [partial])] : []),
     ...sections,
   ];
 }
@@ -339,6 +347,13 @@ export function buildPremiseCaveat(
     return `${metricLabel}${where} moved only ${formatPct(pct)} — too small to treat as a real change, so I can't point to a clear cause.`;
   }
   return undefined;
+}
+
+/** Platforms an answer covers (empty = all). */
+function scopePlatformIds(scope: ResolvedQueryScope): PlatformId[] {
+  return scope.mode === "single_platform" || scope.mode === "multi_platform"
+    ? scope.platformIds
+    : [];
 }
 
 function singlePlatformScope(platformId: PlatformId): ResolvedQueryScope {
@@ -788,12 +803,16 @@ function buildTemporalMessage(
       ? context.consolidatedChartMetric
       : context.focusMetric);
 
-  const end: string = PERFORMANCE_DATE_RANGE.end;
-  let rangeStart: string = addDays(end, -1);
+  // Windows end on the latest day every platform in scope has reported.
+  const end: string = completeThroughFor(scopePlatformIds(scope));
+  let rangeStart: string = end;
   let rangeEnd: string = end;
-  let baselineStart: string = addDays(end, -2);
-  let baselineEnd: string = addDays(end, -2);
-  let title = `Yesterday — ${formatDisplayDate(addDays(end, -1))}`;
+  let baselineStart: string = addDays(end, -1);
+  let baselineEnd: string = addDays(end, -1);
+  let title =
+    end === PERFORMANCE_DATE_RANGE.end
+      ? `Yesterday — ${formatDisplayDate(end)}`
+      : `Latest full day — ${formatDisplayDate(end)} (some platforms report later)`;
 
   if (window === "last_7_days") {
     rangeStart = clampDate(addDays(end, -6));
@@ -824,11 +843,6 @@ function buildTemporalMessage(
     title = `Weekend — ${formatDisplayDate(rangeStart)} to ${formatDisplayDate(rangeEnd)} vs the weekend before`;
   } else if (window === "decline_onset") {
     return buildDeclineOnsetMessage(context, focusMetric, scope);
-  } else {
-    rangeStart = addDays(end, -1);
-    rangeEnd = addDays(end, -1);
-    baselineStart = addDays(end, -2);
-    baselineEnd = addDays(end, -2);
   }
 
   const catalog = {
@@ -931,7 +945,7 @@ function buildDeclineOnsetMessage(
         : undefined,
   };
 
-  const end: string = PERFORMANCE_DATE_RANGE.end;
+  const end: string = completeThroughFor(scopePlatformIds(scope));
   let onset: string = end;
   for (let offset = 1; offset <= 21; offset += 1) {
     const day = addDays(end, -offset);
@@ -1171,7 +1185,7 @@ export function withBidRisk(draft: AskAriaActionDraft): AskAriaActionDraft {
     productId: draft.productId,
     newBid: draft.newBid,
     currentBid: draft.currentBid,
-    asOf: PERFORMANCE_DATE_RANGE.end,
+    asOf: PLATFORM_DATA_THROUGH[draft.platformId],
   });
   return {
     ...draft,
@@ -1646,8 +1660,34 @@ function attachSource(
       scope,
       period: strip(periods[0] ?? fallback[0]),
       comparison: strip(periods[1] ?? fallback[1]),
+      partial:
+        sections.length
+          ? sections.find((s) => s.id === "data_freshness")?.lines[0]
+          : partialDataNote(scope, context.dateRange.end),
     },
   };
+}
+
+/**
+ * When the period runs past the last day some platforms have reported, say
+ * so: their totals for those days are incomplete. (Answers with their own
+ * date window already end on a complete day.)
+ */
+export function partialDataNote(scopeLabel: string, periodEnd: string): string | undefined {
+  const named = PLATFORMS.find((p) => p.name.toLowerCase() === scopeLabel.toLowerCase());
+  const lagging = (named ? [named] : PLATFORMS).filter(
+    (p) => PLATFORM_DATA_THROUGH[p.id] < periodEnd,
+  );
+  if (!lagging.length) return undefined;
+  const byDate = new Map<string, string[]>();
+  for (const p of lagging) {
+    const date = PLATFORM_DATA_THROUGH[p.id];
+    byDate.set(date, [...(byDate.get(date) ?? []), p.name]);
+  }
+  const parts = [...byDate.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, names]) => `${names.join(", ")} through ${formatDisplayDate(date)}`);
+  return `Partial data: ${parts.join("; ")}, so the last days of this period are incomplete for ${lagging.length === 1 ? "it" : "them"}.`;
 }
 
 export function processAskAriaMessage(

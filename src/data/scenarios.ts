@@ -1,4 +1,4 @@
-import type { ScenarioDefinition } from "@/types/analytics";
+import type { PlatformId, ScenarioDefinition } from "@/types/analytics";
 
 export const SCENARIO_DEFINITIONS: ScenarioDefinition[] = [
   {
@@ -105,6 +105,42 @@ export const COMPARISON_PERIOD = {
   start: isoDaysBefore(DATASET_END, 58),
   end: isoDaysBefore(DATASET_END, 30),
 };
+
+/**
+ * Reporting delays (illustrative): real marketplaces deliver data late, often
+ * by a day or two. Days after a platform's "data through" date have no data
+ * for that platform yet.
+ */
+export const PLATFORM_REPORTING_LAG_DAYS: Record<PlatformId, number> = {
+  amazon: 0,
+  flipkart: 1,
+  myntra: 1,
+  ajio: 1,
+  tata_cliq: 2,
+  indiamart: 2,
+  nykaa: 1,
+  purple: 1,
+  bigbasket: 0,
+  blinkit: 0,
+  zepto: 0,
+  swiggy_instamart: 0,
+};
+
+export const PLATFORM_DATA_THROUGH = Object.fromEntries(
+  Object.entries(PLATFORM_REPORTING_LAG_DAYS).map(([id, lag]) => [
+    id,
+    isoDaysBefore(DATASET_END, lag),
+  ]),
+) as Record<PlatformId, string>;
+
+/** Last day every platform has reported; default periods end here. */
+export const COMPLETE_THROUGH = Object.values(PLATFORM_DATA_THROUGH).sort()[0];
+
+/** Latest full day for a set of platforms (all platforms when empty). */
+export function completeThroughFor(platformIds: PlatformId[]): string {
+  const ids = platformIds.length ? platformIds : (Object.keys(PLATFORM_DATA_THROUGH) as PlatformId[]);
+  return ids.map((id) => PLATFORM_DATA_THROUGH[id]).sort()[0];
+}
 
 /** Amazon ROAS decline intensifies over the last 23 days. */
 export const ROAS_DECLINE_WINDOW = {

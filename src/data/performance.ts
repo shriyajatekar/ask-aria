@@ -5,6 +5,7 @@ import {
   COMPARISON_PERIOD,
   CURRENT_PERIOD,
   PERFORMANCE_DATE_RANGE,
+  PLATFORM_DATA_THROUGH,
   ROAS_DECLINE_WINDOW,
 } from "./scenarios";
 
@@ -542,7 +543,8 @@ export function generatePerformanceData(): PerformanceRecord[] {
   }
 
   applyShareMetrics(records);
-  return records;
+  // Days a platform hasn't reported yet have no data (reporting delays).
+  return records.filter((record) => record.date <= PLATFORM_DATA_THROUGH[record.platformId]);
 }
 
 export const PERFORMANCE_RECORDS = generatePerformanceData();

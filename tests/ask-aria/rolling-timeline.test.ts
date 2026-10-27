@@ -24,12 +24,14 @@ afterEach(() => {
 });
 
 describe("rolling timeline", () => {
-  it("ends yesterday and opens on the last 30 days", async () => {
+  it("ends yesterday and opens on the last 30 complete days", async () => {
     const { scenarios, ranges } = await loadOn("2026-10-27");
     expect(scenarios.PERFORMANCE_DATE_RANGE.end).toBe("2026-10-26");
+    // Slowest platforms (2-day reporting delay) set the last complete day.
+    expect(scenarios.COMPLETE_THROUGH).toBe("2026-10-24");
     const { dateRange, comparisonPeriod } = ranges.getDefaultDashboardRanges();
-    expect(dateRange).toEqual({ start: "2026-09-27", end: "2026-10-26" });
-    expect(comparisonPeriod.end).toBe("2026-09-26");
+    expect(dateRange).toEqual({ start: "2026-09-25", end: "2026-10-24" });
+    expect(comparisonPeriod.end).toBe("2026-09-24");
   });
 
   it("keeps the golden path working on every weekday", async () => {

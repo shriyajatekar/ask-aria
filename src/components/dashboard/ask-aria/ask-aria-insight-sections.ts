@@ -4,7 +4,7 @@ export type NormalizedAskAriaInsightSection = AskAriaInsightSection & {
   id: string;
 };
 
-export const META_SECTION_IDS = new Set(["periods_analyzed", "scope"]);
+export const META_SECTION_IDS = new Set(["periods_analyzed", "scope", "data_freshness"]);
 
 export function insightSection(
   id: string,

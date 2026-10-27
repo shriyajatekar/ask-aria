@@ -156,6 +156,8 @@ export interface AskAriaAnswerSource {
   scope: string;
   period: string;
   comparison: string;
+  /** Set when some platforms in scope haven't reported every day of the period. */
+  partial?: string;
 }
 
 export interface AskAriaMetricLine {

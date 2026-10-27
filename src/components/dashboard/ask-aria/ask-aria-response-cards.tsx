@@ -245,6 +245,7 @@ function SourceLine({ source }: { source?: AskAriaAnswerSource }) {
       <span className="font-medium text-text-secondary">Source:</span>{" "}
       {source.dataset} · {source.scope} · {source.period}{" "}
       <span className="whitespace-nowrap">vs {source.comparison}</span>
+      {source.partial ? <span className="mt-0.5 block text-warning">{source.partial}</span> : null}
     </p>
   );
 }
