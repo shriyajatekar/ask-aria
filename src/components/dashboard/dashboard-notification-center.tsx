@@ -11,12 +11,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useAuth } from "@/contexts/auth-provider";
 import { useDashboard } from "@/contexts/dashboard-context";
+import { loadTrackedActions, outcomesFor } from "@/lib/ask-aria/tracked-actions";
 import { PLATFORM_BY_ID } from "@/data/platforms";
 import { cn } from "@/lib/cn";
 
 import { extractLastWorkspaceArtifact } from "./ask-aria/ask-aria-artifacts";
 import { useAskAria } from "./ask-aria/ask-aria-context";
+import { describeOutcome } from "./ask-aria/ask-aria-outcomes";
 import {
   describeSituation,
   situationsForContext,
@@ -40,6 +43,7 @@ type Notification = {
  */
 export function DashboardNotificationCenter() {
   const { messages, runProactivePrompt } = useAskAria();
+  const { user } = useAuth();
   const dashboard = useDashboard();
 
   const situations = useMemo(
@@ -77,6 +81,21 @@ export function DashboardNotificationCenter() {
       actionLabel: "Deep dive in Aria",
       onAction: () => runProactivePrompt(situation.deepDivePrompt),
     }));
+    // "Did it work?": changes with enough data after them to judge.
+    for (const result of outcomesFor(loadTrackedActions(user?.id))) {
+      if (result.verdict === "too_early") continue;
+      const copy = describeOutcome(result);
+      alerts.push({
+        id: `outcome-${result.action.id}`,
+        title: `Did it work? ${copy.verdictLabel}`,
+        body: copy.title,
+        detail: copy.detail,
+        timeLabel: result.action.example ? "Example" : "Outcome ready",
+        actionLabel: "See outcome in Aria",
+        onAction: () => runProactivePrompt("Did it work?"),
+      });
+    }
+
     // A confirmed bid change that the trend check flagged.
     const riskyBid = [...messages]
       .reverse()
@@ -114,7 +133,7 @@ export function DashboardNotificationCenter() {
       });
     }
     return alerts;
-  }, [artifact, runProactivePrompt, situations]);
+  }, [artifact, messages, runProactivePrompt, situations, user?.id]);
 
   const [readIds, setReadIds] = useState<Set<string>>(() => new Set());
   const unreadCount = notifications.filter((n) => !readIds.has(n.id)).length;

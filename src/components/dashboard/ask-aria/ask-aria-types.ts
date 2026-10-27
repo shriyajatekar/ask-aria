@@ -247,6 +247,24 @@ export type AskAriaMessage =
     }
   | {
       id: string;
+      /** "Did it work?" — before/after checks on confirmed actions. */
+      kind: "outcome";
+      title: string;
+      summary: string;
+      items: Array<{
+        id: string;
+        label: string;
+        example: boolean;
+        verdict: "too_early" | "improved" | "worse" | "no_clear_change";
+        verdictLabel: string;
+        detail: string;
+      }>;
+      /** Always shown: before/after is not proof of cause. */
+      caveat: string;
+      createdAt: number;
+    }
+  | {
+      id: string;
       /**
        * One-click deep dive: what happened → why (driver tree) → where →
        * has it happened before → what to do, in one card.

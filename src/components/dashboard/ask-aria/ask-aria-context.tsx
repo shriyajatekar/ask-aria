@@ -29,6 +29,12 @@ import {
 } from "./ask-aria-intelligence";
 import { classifyIntent } from "./ask-aria-intent";
 import { understandWithAi } from "./ask-aria-ai-client";
+import { METRIC_BY_ID } from "@/data/metrics";
+import {
+  loadTrackedActions,
+  saveTrackedAction,
+  trackableFromDraft,
+} from "@/lib/ask-aria/tracked-actions";
 import {
   mapDashboardToAskAriaView,
   toFullContext,
@@ -522,6 +528,7 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
           recentMessages: conversation?.messages ?? [],
           appUserEmail: user?.email,
           activeMonitors: monitors,
+          trackedActions: loadTrackedActions(userId),
         },
       );
 
@@ -593,6 +600,7 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
           recentMessages: conversation?.messages ?? [],
           appUserEmail: user?.email,
           activeMonitors: monitors,
+          trackedActions: loadTrackedActions(userId),
         },
       );
       appendMessages(
@@ -880,6 +888,20 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
             result = mockExecuteAction(draft);
           }
           const completedMessages: AskAriaMessage[] = [result];
+          // Bid, budget and keyword changes get a before/after check later.
+          const tracked =
+            userId && result.kind === "action_result" && result.status === "completed"
+              ? trackableFromDraft(draft, new Date().toISOString().slice(0, 10))
+              : null;
+          if (userId && tracked) {
+            saveTrackedAction(userId, tracked);
+            completedMessages.push({
+              id: createMessageId(),
+              kind: "assistant_text",
+              text: `Tracking this change. I'll compare ${METRIC_BY_ID[tracked.metric]?.name ?? tracked.metric} before and after it; ask “Did it work?” from ${new Date(Date.parse(tracked.date) + 3 * 86_400_000).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}.`,
+              createdAt: Date.now(),
+            });
+          }
           if (
             result.kind === "action_result" &&
             result.status === "completed" &&

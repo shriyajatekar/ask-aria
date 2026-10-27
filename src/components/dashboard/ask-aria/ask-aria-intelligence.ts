@@ -61,6 +61,8 @@ import {
 } from "./ask-aria-intent";
 import { goldenPathChips } from "./ask-aria-golden-path";
 import { buildSituationMessage, describePastEpisode } from "./ask-aria-situations";
+import { buildOutcomeMessage } from "./ask-aria-outcomes";
+import type { TrackedAction } from "@/lib/analytics/outcomes";
 import { buildCollabDraftPartial, isCollabAction } from "./ask-aria-collab-actions";
 import {
   buildHistoricalSectionLines,
@@ -1522,6 +1524,8 @@ export interface ProcessAskAriaMessageOptions {
   recentMessages?: AskAriaMessage[];
   appUserEmail?: string;
   activeMonitors?: AriaMonitor[];
+  /** Confirmed actions to check in "Did it work?". */
+  trackedActions?: TrackedAction[];
 }
 
 function buildCapabilityDiscoveryResponse(): AskAriaMessage {
@@ -2429,6 +2433,13 @@ function routeAskAriaMessage(
     return {
       messages: [userMessage, insight.message],
       memory: insight.memory,
+    };
+  }
+
+  if (intent === "outcome_check") {
+    return {
+      messages: [userMessage, buildOutcomeMessage(options?.trackedActions ?? [])],
+      memory,
     };
   }
 

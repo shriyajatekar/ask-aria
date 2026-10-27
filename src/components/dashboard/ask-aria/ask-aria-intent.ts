@@ -38,7 +38,8 @@ export type AskAriaIntent =
   | "unknown"
   | "root_cause_analysis"
   | "situation_alerts"
-  | "deep_dive";
+  | "deep_dive"
+  | "outcome_check";
 
 export function isConfirmPhrase(text: string): boolean {
   const lower = text.toLowerCase().trim();
@@ -269,6 +270,11 @@ function isRecommendationQuery(text: string): boolean {
 }
 
 /** "What needs my attention?", "Any alerts?", "What should I worry about?" */
+/** "Did it work?", "How did my changes do?", "Show outcomes" */
+export function isOutcomeQuery(text: string): boolean {
+  return /\b(did (it|that|this|they|my \w+( \w+)?) work|how did my (changes?|actions?|bids?) (do|go|perform)|outcomes?|did .{0,30} help)\b/i.test(text);
+}
+
 /** "Deep dive into ROAS on Amazon", "dig into this", "full analysis" */
 export function isDeepDiveQuery(text: string): boolean {
   return /\b(deep[- ]?dive|dig (into|deeper)|full (analysis|investigation|picture))\b/i.test(text);
@@ -331,6 +337,11 @@ export function classifyIntent(
   const trimmed = text.trim();
   const lower = trimmed.toLowerCase();
 
+  // "How did my bids do?" is about past actions, not a new bid.
+  if (isOutcomeQuery(trimmed)) {
+    return "outcome_check";
+  }
+
   const actionParse = parseActionRequest(trimmed);
 
   if (memory.pendingActionDraft && !looksLikeActionSpecification(trimmed)) {
@@ -369,6 +380,10 @@ export function classifyIntent(
 
   if (metricDefinitionTerm(trimmed)) {
     return "metric_definition";
+  }
+
+  if (isOutcomeQuery(trimmed)) {
+    return "outcome_check";
   }
 
   if (isDeepDiveQuery(trimmed)) {

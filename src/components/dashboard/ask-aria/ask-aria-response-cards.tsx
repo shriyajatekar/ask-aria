@@ -261,6 +261,10 @@ function AskAriaMessageCard({
     return <SituationCard message={message} onHandoff={onHandoff} />;
   }
 
+  if (message.kind === "outcome") {
+    return <OutcomeCard message={message} />;
+  }
+
   if (message.kind === "deep_dive") {
     return <DeepDiveCard message={message} onHandoff={onHandoff} />;
   }
@@ -828,6 +832,37 @@ function InsightAccordionCard({
       </div>
 
       <HandoffButtons handoffs={message.handoffs} onHandoff={onHandoff} />
+    </div>
+  );
+}
+
+const VERDICT_STYLE = {
+  improved: "border border-border text-text-primary",
+  worse: "bg-error-subtle text-error",
+  no_clear_change: "border border-border text-text-secondary",
+  too_early: "border border-dashed border-border-strong text-text-secondary",
+} as const;
+
+/** "Did it work?": each tracked change with a before/after verdict. */
+function OutcomeCard({ message }: { message: Extract<AskAriaMessage, { kind: "outcome" }> }) {
+  return (
+    <div className="rounded-md border border-border px-3 py-3">
+      <p className="type-label text-text-tertiary">{message.title}</p>
+      <p className="mt-2 type-body font-medium leading-snug text-text-primary">{message.summary}</p>
+      <ul className="mt-3 space-y-2.5">
+        {message.items.map((item) => (
+          <li key={item.id} className="rounded-md bg-background-secondary px-2.5 py-2">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <p className="min-w-0 flex-1 type-small text-text-primary">{item.label}</p>
+              <span className={cn("shrink-0 rounded-sm px-1.5 py-0.5 type-small", VERDICT_STYLE[item.verdict])}>
+                {item.verdictLabel}
+              </span>
+            </div>
+            <p className="mt-1 type-small tabular-nums text-text-secondary">{item.detail}</p>
+          </li>
+        ))}
+      </ul>
+      <CaveatNote caveat={message.caveat} />
     </div>
   );
 }
