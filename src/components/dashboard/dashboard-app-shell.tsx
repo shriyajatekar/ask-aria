@@ -6,13 +6,11 @@ import {
   ChevronDown,
   PanelLeftClose,
   PanelLeftOpen,
-  Settings,
 } from "lucide-react";
 
 import { useAuth } from "@/contexts/auth-provider";
 import { useDashboard } from "@/contexts/dashboard-context";
 import { getRoleLabel } from "@/lib/auth/role-utils";
-import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -85,7 +83,7 @@ export function DashboardAppShell({ children }: { children: ReactNode }) {
               {/* Page heading. On phones the label stacks under the name
                   instead of wrapping over three lines. */}
               <h1 className="flex min-w-0 flex-col leading-tight sm:block">
-                <span className="type-body-medium truncate whitespace-nowrap text-text-primary max-sm:text-[14px]">
+                <span className="type-body-medium truncate whitespace-nowrap text-text-primary">
                   Commerce Intelligence
                 </span>
                 <span className="type-small whitespace-nowrap text-text-tertiary max-sm:text-[11px]">
@@ -115,13 +113,8 @@ export function DashboardAppShell({ children }: { children: ReactNode }) {
               )}
             </div>
 
-            <div className="flex-1" />
-
             <div className="flex items-center gap-1">
               <DashboardNotificationCenter />
-              <Button variant="tertiary" size="icon" aria-label="Settings">
-                <Settings className="h-4 w-4" />
-              </Button>
               {user ? (
                 <UserProfileMenu
                   name={user.name}
