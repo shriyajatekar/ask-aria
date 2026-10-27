@@ -396,7 +396,7 @@ export function tryRefineMonitorDraft(
     return null;
   }
 
-  let partial: Partial<AskAriaActionDraft> = { ...draft };
+  const partial: Partial<AskAriaActionDraft> = { ...draft };
   let changed = false;
 
   const makeThreshold = text.match(

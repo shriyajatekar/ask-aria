@@ -241,6 +241,7 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
   }, [userId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Monitors live in browser storage, so they are loaded after mount and when the user changes.
     refreshMonitors();
   }, [refreshMonitors, userId]);
 
@@ -312,6 +313,7 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!userId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Conversations live in browser storage, so they are loaded after mount and reloaded when the user changes.
       clearAskAriaTransientState();
       return;
     }
@@ -480,6 +482,7 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
     const proactive = buildProactiveInsight(reasoningContext);
     if (!proactive) return;
     proactiveShownForConversation.current.add(threadConversationId);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Shows one proactive insight when an empty thread opens; guarded by a ref so it runs once.
     appendMessages([proactive], conversationMemory, undefined, threadConversationId);
   }, [
     appendMessages,
@@ -1189,6 +1192,7 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
   }, [createEmptyConversation, upsertConversation, userId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Google connection status is fetched from the server after load.
     void refreshGoogleWorkspaceStatus();
   }, [refreshGoogleWorkspaceStatus, toolsConnectedTick, userId]);
 

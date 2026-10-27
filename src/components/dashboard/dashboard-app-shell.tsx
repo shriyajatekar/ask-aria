@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import {
   ChevronDown,
   PanelLeftClose,
@@ -33,26 +33,42 @@ const SIDEBAR_COLLAPSED_KEY = "ci-sidebar-collapsed";
 const SIDEBAR_WIDTH_EXPANDED = 252;
 const SIDEBAR_WIDTH_COLLAPSED = 68;
 
+const SIDEBAR_EVENT = "ci-sidebar-change";
+
+function subscribeSidebar(onChange: () => void) {
+  window.addEventListener(SIDEBAR_EVENT, onChange);
+  return () => window.removeEventListener(SIDEBAR_EVENT, onChange);
+}
+
+function readSidebarCollapsed(): boolean {
+  try {
+    return window.sessionStorage.getItem(SIDEBAR_COLLAPSED_KEY) !== "false";
+  } catch {
+    return true;
+  }
+}
+
 export function DashboardAppShell({ children }: { children: ReactNode }) {
   const { user, signOut } = useAuth();
   const { platform, setPlatform } = useDashboard();
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
-
-  useEffect(() => {
-    const stored = window.sessionStorage.getItem(SIDEBAR_COLLAPSED_KEY);
-    if (stored === "false") {
-      setSidebarCollapsed(false);
-    } else if (stored === "true") {
-      setSidebarCollapsed(true);
-    }
-  }, []);
+  // Sidebar preference lives in sessionStorage; read it as an external store
+  // so the server render (collapsed) and the browser agree without an effect.
+  const sidebarCollapsed = useSyncExternalStore(
+    subscribeSidebar,
+    () => readSidebarCollapsed(),
+    () => true,
+  );
 
   function toggleSidebar() {
-    setSidebarCollapsed((current) => {
-      const next = !current;
-      window.sessionStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(next));
-      return next;
-    });
+    try {
+      window.sessionStorage.setItem(
+        SIDEBAR_COLLAPSED_KEY,
+        String(!sidebarCollapsed),
+      );
+    } catch {
+      // Storage blocked: the toggle won't persist, which is fine.
+    }
+    window.dispatchEvent(new Event(SIDEBAR_EVENT));
   }
 
   const sidebarWidth = sidebarCollapsed

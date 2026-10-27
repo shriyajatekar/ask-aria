@@ -1483,7 +1483,7 @@ export function tryRefineEmailDraft(
     return null;
   }
   const lower = text.toLowerCase();
-  let partial: Partial<AskAriaActionDraft> = { ...draft };
+  const partial: Partial<AskAriaActionDraft> = { ...draft };
   let changed = false;
 
   const explicit = parseExplicitEmailAddresses(text);
@@ -1587,7 +1587,7 @@ export function tryRefineSpreadsheetDraft(
   if (!isSpreadsheetRefinementPhrase(text)) return null;
 
   const lower = text.toLowerCase().trim();
-  let partial: Partial<AskAriaActionDraft> = { ...draft };
+  const partial: Partial<AskAriaActionDraft> = { ...draft };
   let changed = false;
 
   const platformId = resolvePlatform(text);
