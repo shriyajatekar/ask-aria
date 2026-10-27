@@ -120,7 +120,7 @@ export function ProductPerformanceTable() {
             Product performance
           </h2>
           <p className="type-small text-text-tertiary">
-            Dense SKU table with sorting, search and pagination.
+            All products in the current filters. Sort, search or page through them.
           </p>
         </div>
         <Input

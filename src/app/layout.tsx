@@ -15,9 +15,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Commerce Intelligence",
+  title: "Ask Aria · Conceptual case study",
   description:
-    "Enterprise commerce analytics platform with Ask Aria intelligence layer.",
+    "Conceptual case study: a conversational assistant for commerce analytics, built on synthetic data across 12 ecommerce and quick-commerce platforms.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

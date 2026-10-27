@@ -161,18 +161,19 @@ export function getPlatformBreakdown(
     const previous = comparisonRecords.filter(
       (record) => record.platformId === platformId,
     );
-    const revenue = aggregateMetric(current, "revenue", "sum");
-    const previousRevenue = aggregateMetric(previous, "revenue", "sum");
+    // Gross Sales, the same number the KPI cards, chart and Ask Aria use.
+    const grossSales = aggregateMetric(current, "gross_sales", "sum");
+    const previousGrossSales = aggregateMetric(previous, "gross_sales", "sum");
     const growth =
-      previousRevenue === 0
+      previousGrossSales === 0
         ? 0
         : Number(
-            (((revenue - previousRevenue) / previousRevenue) * 100).toFixed(2),
+            (((grossSales - previousGrossSales) / previousGrossSales) * 100).toFixed(2),
           );
 
     return {
       platformId,
-      revenue,
+      grossSales,
       orders: aggregateMetric(current, "orders", "sum"),
       conversion: aggregateMetric(current, "conversion_rate", "average"),
       roas: aggregateMetric(current, "roas", "average"),

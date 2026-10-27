@@ -52,6 +52,28 @@ describe("show the source", () => {
   });
 });
 
+describe("answer copy", () => {
+  it("has no double negatives and uses lakh/crore, never millions", () => {
+    const followUps = ["Which products caused it?", "Has this happened before?", "Why?"];
+    const texts = ROLES.flatMap((role) =>
+      ANALYSIS_QUESTIONS.flatMap((q) =>
+        followUps.flatMap((f) => converse(role, [q, f]).flatMap((t) => t.reply)),
+      ),
+    ).flatMap((m) =>
+      m.kind === "insight"
+        ? [m.summary, m.caveat ?? "", ...m.sections.flatMap((s) => s.lines)]
+        : m.kind === "recommendation"
+          ? [m.observation]
+          : [],
+    );
+    expect(texts.length).toBeGreaterThan(100);
+    const bad = texts.filter((t) =>
+      /\b(declined|fell|dropped) -\d|\b(increased|rose|grew) \+\d|₹[\d.]+M\b/.test(t),
+    );
+    expect(bad).toEqual([]);
+  });
+});
+
 describe("design-notes labels", () => {
   it("every analysis answer shows source, one answer and leads with a number", () => {
     for (const reply of analysisReplies()) {

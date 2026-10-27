@@ -62,7 +62,7 @@ export function TopBottomPerformers() {
         <div>
           <CardTitle className="type-h3">Top &amp; Bottom Performers</CardTitle>
           <p className="type-small text-text-tertiary">
-            Rankings from existing analytics utilities.
+            Ranked by a blend of sales, conversion, ROAS, rating and Buy Box share.
           </p>
         </div>
         <div className="inline-flex rounded-md border border-border p-1">

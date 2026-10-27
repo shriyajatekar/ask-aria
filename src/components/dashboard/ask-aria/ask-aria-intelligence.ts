@@ -1037,7 +1037,7 @@ function buildExecutiveSummary(
   const rupees = (value: number) => formatMetricValue("gross_sales", Math.abs(value));
 
   const lead = risk
-    ? `Biggest risk: ${nameOf(risk.platformId)} Gross Sales fell ${formatPct(risk.delta.pct)} (${rupees(risk.impact)} lost), the largest drop of any platform.`
+    ? `Biggest risk: ${nameOf(risk.platformId)} Gross Sales fell ${formatPct(risk.delta.pct).replace(/^-/, "")} (${rupees(risk.impact)} lost), the largest drop of any platform.`
     : `No platform lost Gross Sales in ${scope.scopeLabel} this period.`;
 
   return {
@@ -2056,7 +2056,12 @@ function routeAskAriaMessage(
           id: createMessageId(),
           kind: "insight",
           title: `Historical pattern — ${metricName(focusMetric)}`,
-          summary: `Prior ${metricName(focusMetric)} declines in the available workspace history for ${scope.scopeLabel}.`,
+          summary: events.length
+            ? `${metricName(focusMetric)} on ${scope.scopeLabel} has dropped like this ${events.length} time${events.length === 1 ? "" : "s"} before in the available history.`
+            : `No comparable ${metricName(focusMetric)} drop on ${scope.scopeLabel} in the available history.`,
+          caveat: events.length
+            ? undefined
+            : "The synthetic dataset covers about 10 weeks (2 Dec 2025 – 15 Feb 2026), too short to tell whether this is a recurring pattern.",
           sections: prependAnalysisSections(context, scope, [
             insightSection("what_happened_historically", "What happened historically", lines),
           ]),

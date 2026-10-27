@@ -129,7 +129,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     direction: "desc",
   });
   const [platformTableSort, setPlatformTableSort] = useState<DashboardSortState>({
-    field: "revenue",
+    field: "grossSales",
     direction: "desc",
   });
   const [productSearch, setProductSearch] = useState("");

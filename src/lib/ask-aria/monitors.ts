@@ -300,9 +300,7 @@ export function formatMetricValue(metric: MetricId, value: number): string {
     if (abs >= 1_00_00_000) {
       return `₹${(value / 1_00_00_000).toFixed(2)}Cr`;
     }
-    if (abs >= 10_00_000) {
-      return `₹${(value / 10_00_000).toFixed(2)}M`;
-    }
+    // Indian units only (lakh, crore) to match the dashboard.
     if (abs >= 100_000) {
       return `₹${(value / 100_000).toFixed(2)}L`;
     }
