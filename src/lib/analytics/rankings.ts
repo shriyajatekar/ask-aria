@@ -1,6 +1,7 @@
 import type { MetricId, PerformanceRecord, Product } from "@/types/analytics";
 
 import { averageMetricById, sumMetricById } from "./calculations";
+import { aggregateMetric } from "./comparisons";
 
 export interface ProductRankingScore {
   productId: string;
@@ -25,8 +26,8 @@ function scoreProductRecords(records: PerformanceRecord[]): ProductRankingScore[
   return [...grouped.entries()].map(([productId, productRecords]) => {
     const sample = productRecords[0];
     const revenue = sumMetricById(productRecords, "revenue");
-    const conversionRate = averageMetricById(productRecords, "conversion_rate");
-    const roas = averageMetricById(productRecords, "roas");
+    const conversionRate = aggregateMetric(productRecords, "conversion_rate");
+    const roas = aggregateMetric(productRecords, "roas");
     const rating = averageMetricById(productRecords, "product_rating");
     const buyBoxShare = averageMetricById(productRecords, "buy_box_share");
 
