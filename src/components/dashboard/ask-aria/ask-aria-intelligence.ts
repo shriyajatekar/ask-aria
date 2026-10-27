@@ -11,6 +11,11 @@ import {
 import { aggregateMetric } from "@/lib/analytics/comparisons";
 import { rankProducts } from "@/lib/analytics/rankings";
 import {
+  analyzeRootCause,
+  type RcaDriver,
+  type RcaMetricId,
+} from "@/lib/analytics/root-cause";
+import {
   filterPerformanceRecords,
   getMetricAggregationType,
 } from "@/lib/dashboard/filter-records";
@@ -47,6 +52,7 @@ import {
   classifyIntent,
   isCapabilityDiscoveryQuery,
   isGrowthQuestion,
+  isRcaQuery,
   isMonitorListingQuery,
   isSendThisConfirmPhrase,
   metricDefinitionTerm,
@@ -1140,6 +1146,101 @@ function buildNonAnalysisReply(
   };
 }
 
+/** RCA covers two driver trees; other metrics map to the tree they sit in. */
+export function rcaMetricFor(text: string, memoryMetric?: MetricId): RcaMetricId {
+  if (/\b(roas|acos|cpc|ad spend|ads?)\b/i.test(text)) return "roas";
+  if (/\b(sales|revenue|orders|conversion|sessions|traffic)\b/i.test(text)) {
+    return "gross_sales";
+  }
+  return memoryMetric === "roas" || memoryMetric === "acos" || memoryMetric === "cpc"
+    ? "roas"
+    : "gross_sales";
+}
+
+const RCA_FORMULA: Record<RcaMetricId, string> = {
+  gross_sales: "Gross Sales = Sessions × Conversion rate × Sales per order",
+  roas: "ROAS = Ad sales per click ÷ Cost per click",
+};
+
+function formatRcaValue(format: RcaDriver["format"], value: number): string {
+  if (format === "percentage") return `${value.toFixed(2)}%`;
+  if (format === "integer") return Math.round(value).toLocaleString("en-IN");
+  if (format === "currency") {
+    return value < 100
+      ? `₹${value.toFixed(2)}`
+      : formatMetricValue("gross_sales", value);
+  }
+  return value.toFixed(2);
+}
+
+function formatRcaContribution(metric: RcaMetricId, value: number): string {
+  const sign = value >= 0 ? "+" : "−";
+  return metric === "roas"
+    ? `${sign}${Math.abs(value).toFixed(2)}`
+    : `${sign}${formatMetricValue("gross_sales", Math.abs(value))}`;
+}
+
+function signedPct(value: number): string {
+  return `${value >= 0 ? "+" : "−"}${Math.abs(value).toFixed(1)}%`;
+}
+
+/** Root-cause analysis answer: driver waterfall, where it happened, what was ruled out. */
+function buildRcaMessage(
+  context: AskAriaFullContext,
+  scope: ResolvedQueryScope,
+  metric: RcaMetricId,
+): AskAriaMessage {
+  const { current, comparison } = filterForScope(context, scope);
+  const rca = analyzeRootCause(metric, current, comparison);
+  const metricLabel = metricName(metric);
+  const valueOf = (v: number) =>
+    metric === "roas" ? v.toFixed(2) : formatMetricValue("gross_sales", v);
+  const where = scope.scopeLabel === "all platforms" ? "" : ` on ${scope.scopeLabel}`;
+  const moved = rca.change < 0 ? "drop" : "rise";
+  const top = rca.topDriver;
+
+  const summary = top
+    ? `${top.label} drives ${Math.abs(top.sharePct).toFixed(0)}% of the ${metricLabel} ${moved}${where}: it ${top.changePct >= 0 ? "rose" : "fell"} ${Math.abs(top.changePct).toFixed(1)}% (${formatRcaValue(top.format, top.previous)} → ${formatRcaValue(top.format, top.current)}).`
+    : `${metricLabel}${where} barely moved (${signedPct(rca.changePct)}), so there is no cause to trace.`;
+
+  return {
+    id: createMessageId(),
+    kind: "rca",
+    title: `Root-cause analysis — ${metricLabel}${where}`,
+    summary,
+    rcaMetric: metric,
+    metricLabel,
+    scopeLabel: scope.scopeLabel,
+    totalLine: `${metricLabel} ${valueOf(rca.previous)} → ${valueOf(rca.current)} (${signedPct(rca.changePct)})`,
+    formula: RCA_FORMULA[metric],
+    drivers: rca.drivers.map((d) => ({
+      label: d.label,
+      from: formatRcaValue(d.format, d.previous),
+      to: formatRcaValue(d.format, d.current),
+      changePct: signedPct(d.changePct),
+      contribution: formatRcaContribution(metric, d.contribution),
+      sharePct: d.sharePct,
+      role: d === top ? "cause" : d.sharePct < 0 ? "offset" : Math.abs(d.sharePct) < 10 ? "minor" : "cause",
+    })),
+    // A single-platform analysis would only show "Amazon 100%".
+    platforms: (scope.mode === "single_platform" ? [] : rca.platforms).map((p) => ({
+      label: PLATFORM_BY_ID[p.platformId]?.name ?? p.platformId,
+      sharePct: p.sharePct,
+    })),
+    products: rca.products.map((p) => ({
+      label: `${PRODUCT_BY_ID[p.productId]?.name ?? p.productId} (${PLATFORM_BY_ID[p.platformId]?.name ?? p.platformId})`,
+      sharePct: p.sharePct,
+    })),
+    ruledOut: rca.ruledOut,
+    otherSignals: rca.otherSignals,
+    confidence: rca.confidence,
+    confidenceReason: rca.confidenceReason,
+    caveat: rca.confidence === "low" ? rca.confidenceReason : undefined,
+    handoffs: top ? [{ label: "Export RCA report", prompt: "Create an RCA report" }] : [],
+    createdAt: Date.now(),
+  };
+}
+
 function executiveSummaryTurn(
   userMessage: AskAriaMessage,
   context: AskAriaFullContext,
@@ -1340,7 +1441,11 @@ function attachSource(
   context: AskAriaFullContext,
   memory: AskAriaInvestigationMemory,
 ): AskAriaMessage {
-  if (message.kind !== "insight" && message.kind !== "recommendation") {
+  if (
+    message.kind !== "insight" &&
+    message.kind !== "recommendation" &&
+    message.kind !== "rca"
+  ) {
     return message;
   }
   if (message.source) return message;
@@ -1351,7 +1456,9 @@ function attachSource(
   const strip = (line: string | undefined) =>
     (line ?? "").replace(/^[^:]+:\s*/, "").replace(" → ", " – ");
   const platform = memory.lastPlatform ?? memory.platformId ?? context.platform;
-  const scope = scopeLine
+  const scope = message.kind === "rca"
+    ? message.scopeLabel
+    : scopeLine
     ? strip(scopeLine)
     : platform && platform !== "all"
       ? PLATFORM_BY_ID[platform]?.name ?? platform
@@ -1695,6 +1802,9 @@ function routeAskAriaMessage(
         partial,
         recentMessages,
         memory,
+        isRcaQuery(trimmed)
+          ? { rcaMetric: rcaMetricFor(trimmed, memory.lastMetric ?? memory.metricId) }
+          : undefined,
       );
     }
 
@@ -2139,6 +2249,35 @@ function routeAskAriaMessage(
     return {
       messages: [userMessage, insight.message],
       memory: insight.memory,
+    };
+  }
+
+  if (intent === "root_cause_analysis") {
+    const rcaMetric = rcaMetricFor(
+      trimmed,
+      memory.activeAnalysisContext?.metricId ?? memory.lastMetric ?? memory.metricId,
+    );
+    // "Run a root-cause analysis" right after an answer analyses the same
+    // platform that answer was about, unless the question names one.
+    const rcaScope =
+      extractPlatformIdsFromText(trimmed).length === 0 &&
+      memory.lastPlatform &&
+      memory.lastPlatform !== "all"
+        ? singlePlatformScope(memory.lastPlatform)
+        : scope;
+    const rcaPlatform = memoryPlatformFromScope(rcaScope, context);
+    return {
+      messages: [userMessage, buildRcaMessage(context, rcaScope, rcaMetric)],
+      memory: {
+        ...memory,
+        topic: "metric_change",
+        metricId: rcaMetric,
+        lastMetric: rcaMetric,
+        lastTopic: "rca",
+        platformId: rcaPlatform,
+        lastPlatform: rcaPlatform,
+        activeAnalysisContext: buildActiveAnalysisContext(context, rcaScope, rcaMetric, undefined),
+      },
     };
   }
 

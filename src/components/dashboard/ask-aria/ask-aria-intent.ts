@@ -35,7 +35,8 @@ export type AskAriaIntent =
   | "general_performance"
   | "greeting"
   | "metric_definition"
-  | "unknown";
+  | "unknown"
+  | "root_cause_analysis";
 
 export function isConfirmPhrase(text: string): boolean {
   const lower = text.toLowerCase().trim();
@@ -265,6 +266,13 @@ function isRecommendationQuery(text: string): boolean {
   );
 }
 
+/** "Run a root-cause analysis", "RCA for ROAS", "what's driving this?" */
+export function isRcaQuery(text: string): boolean {
+  return /\b(root[- ]?cause|rca|driver tree|what('s| is) driving (this|it|the (drop|decline|change))|break (it|this) down by drivers?)\b/i.test(
+    text,
+  );
+}
+
 export function isProductRankingQuery(text: string): boolean {
   const lower = text.toLowerCase();
   if (lower.includes("caused") || lower.includes("affect")) return false;
@@ -347,6 +355,10 @@ export function classifyIntent(
 
   if (metricDefinitionTerm(trimmed)) {
     return "metric_definition";
+  }
+
+  if (isRcaQuery(trimmed)) {
+    return "root_cause_analysis";
   }
 
   // Executive questions often name a period ("this month") without asking

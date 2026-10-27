@@ -25,7 +25,8 @@ describe("golden path", () => {
       expect.arrayContaining(["lead_with_insight", "show_source"]),
     );
     expect(why.reply[0].kind === "insight" && why.reply[0].caveat).toBeFalsy();
-    expect(products.intent).toBe("product_analysis");
+    expect(products.intent).toBe("root_cause_analysis");
+    expect(products.reply[0].kind).toBe("rca");
     expect(products.memory.lastMetric).toBe("roas");
     expect(products.memory.lastPlatform).toBe("amazon");
     expect(history.intent).toBe("historical_pattern");

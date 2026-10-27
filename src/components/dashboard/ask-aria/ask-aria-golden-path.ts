@@ -14,9 +14,9 @@ export interface GoldenPathStep {
 export const GOLDEN_PATH: Record<UserRole, GoldenPathStep[]> = {
   ANALYST: [
     { prompt: "Why did ROAS drop on Amazon?", shows: "Leads with the insight, cites source and period" },
-    { prompt: "Which products caused it?", shows: "Follow-up keeps metric, platform and period" },
+    { prompt: "Run a root-cause analysis", shows: "Driver tree: what explains the drop, where, and what was ruled out" },
     { prompt: "Has this happened before?", shows: "Says plainly when there is no precedent" },
-    { prompt: "Create a report from this analysis", shows: "Insight → action, confirm before it runs" },
+    { prompt: "Create an RCA report", shows: "Insight → action, confirm before it runs" },
   ],
   KAM: [
     { prompt: "Which brands need attention?", shows: "Role-specific answer: accounts, not channels" },

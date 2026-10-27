@@ -38,6 +38,14 @@ export function principlesForMessage(message: AskAriaMessage): AriaPrinciple[] {
       if (message.handoffs?.length) shown.push("offer_next_step");
       if (message.caveat) shown.push("say_when_uncertain");
       break;
+    case "rca":
+      if (leadsWithInsight(message.summary)) shown.push("lead_with_insight");
+      if (message.source) shown.push("show_source");
+      shown.push("one_answer");
+      if (message.handoffs?.length) shown.push("offer_next_step");
+      // Every RCA states its confidence; low confidence is called out.
+      shown.push("say_when_uncertain");
+      break;
     case "recommendation":
       if (leadsWithInsight(message.observation)) shown.push("lead_with_insight");
       if (message.source) shown.push("show_source");

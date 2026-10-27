@@ -751,6 +751,7 @@ export function buildActionDraft(
     reportTitle: partial.reportTitle,
     reportPeriodLabel: partial.reportPeriodLabel,
     reportPlatformScope: partial.reportPlatformScope,
+    reportRcaMetric: partial.reportRcaMetric,
     keywordsPausedCount: partial.keywordsPausedCount,
     categoryLabel: partial.categoryLabel,
     reallocateAmount: partial.reallocateAmount,

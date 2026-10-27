@@ -253,6 +253,10 @@ function AskAriaMessageCard({
     );
   }
 
+  if (message.kind === "rca") {
+    return <RootCauseCard message={message} onHandoff={onHandoff} />;
+  }
+
   if (message.kind === "recommendation") {
     return (
       <RecommendationAccordionCard
@@ -785,6 +789,138 @@ function InsightAccordionCard({
         ))}
       </div>
 
+      <HandoffButtons handoffs={message.handoffs} onHandoff={onHandoff} />
+    </div>
+  );
+}
+
+const CONFIDENCE_LABEL = {
+  high: "High confidence",
+  medium: "Medium confidence",
+  low: "Low confidence",
+} as const;
+
+function ShareBar({
+  sharePct,
+  role,
+}: {
+  sharePct: number;
+  role: "cause" | "offset" | "minor";
+}) {
+  const width = Math.min(100, Math.max(2, Math.abs(sharePct)));
+  return (
+    <div className="h-2 w-full rounded-full bg-background-secondary" aria-hidden>
+      <div
+        className={cn(
+          "h-2 rounded-full motion-safe:transition-[width] motion-safe:duration-500",
+          role === "cause" && "bg-accent-interactive",
+          role === "minor" && "bg-border-strong",
+          role === "offset" && "border border-dashed border-text-tertiary bg-transparent",
+        )}
+        style={{ width: `${width}%` }}
+      />
+    </div>
+  );
+}
+
+/**
+ * Root-cause analysis: the driver tree as a waterfall (how much each driver
+ * explains), then where it happened, then what was ruled out.
+ */
+function RootCauseCard({
+  message,
+  onHandoff,
+}: {
+  message: Extract<AskAriaMessage, { kind: "rca" }>;
+  onHandoff: (handoff: AskAriaHandoff) => void;
+}) {
+  return (
+    <div className="rounded-md border border-border px-3 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="type-label text-text-tertiary">{message.title}</p>
+        <span className="rounded-sm border border-border px-1.5 py-0.5 type-small text-text-secondary">
+          {CONFIDENCE_LABEL[message.confidence]}
+        </span>
+      </div>
+      <CaveatNote caveat={message.caveat} />
+      <p className="mt-2 type-body font-medium leading-snug text-text-primary">
+        {message.summary}
+      </p>
+      <p className="mt-1 type-small tabular-nums text-text-secondary">
+        {message.totalLine}
+      </p>
+
+      <section className="mt-3 rounded-md bg-background-secondary px-2.5 py-2.5" aria-label="Driver tree">
+        <p className="type-small font-mono text-text-secondary">{message.formula}</p>
+        <ul className="mt-2 space-y-2">
+          {message.drivers.map((driver) => (
+            <li key={driver.label}>
+              <div className="flex items-baseline justify-between gap-2 type-small">
+                <span className="text-text-primary">{driver.label}</span>
+                <span className="tabular-nums text-text-secondary">
+                  {driver.from} → {driver.to} ({driver.changePct})
+                </span>
+              </div>
+              <div className="mt-1 flex items-center gap-2">
+                <ShareBar sharePct={driver.sharePct} role={driver.role} />
+                <span className="w-28 shrink-0 text-right type-small tabular-nums text-text-secondary">
+                  {driver.role === "offset"
+                    ? `offset ${Math.abs(driver.sharePct).toFixed(0)}%`
+                    : `${Math.abs(driver.sharePct).toFixed(0)}% of change`}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      {message.platforms.length || message.products.length ? (
+        <section className="mt-3" aria-label="Where it happened">
+          <p className="type-label text-text-primary">Where it happened</p>
+          <ul className="mt-1.5 space-y-1.5">
+            {[...message.platforms, ...message.products].map((row) => (
+              <li key={row.label} className="flex items-center gap-2 type-small">
+                <span className="w-40 shrink-0 truncate text-text-primary" title={row.label}>
+                  {row.label}
+                </span>
+                <ShareBar sharePct={row.sharePct} role="cause" />
+                <span className="w-10 shrink-0 text-right tabular-nums text-text-secondary">
+                  {Math.round(row.sharePct)}%
+                </span>
+              </li>
+            ))}
+          </ul>
+          {message.products.reduce((total, row) => total + row.sharePct, 0) > 100 ? (
+            <p className="mt-1.5 type-small text-text-tertiary">
+              Some products moved the other way, so these shares can add up to more than 100%.
+            </p>
+          ) : null}
+        </section>
+      ) : null}
+
+      <div className="mt-3 space-y-1">
+        {message.ruledOut.length ? (
+          <AccordionBlock
+            panelId={`rca-${message.id}-ruled-out`}
+            title="Ruled out"
+            lines={message.ruledOut}
+          />
+        ) : null}
+        {message.otherSignals.length ? (
+          <AccordionBlock
+            panelId={`rca-${message.id}-signals`}
+            title="Also moved"
+            lines={message.otherSignals}
+          />
+        ) : null}
+        <AccordionBlock
+          panelId={`rca-${message.id}-confidence`}
+          title="How sure is this?"
+          lines={[message.confidenceReason]}
+        />
+      </div>
+
+      <SourceLine source={message.source} />
       <HandoffButtons handoffs={message.handoffs} onHandoff={onHandoff} />
     </div>
   );

@@ -72,3 +72,57 @@ describe("root-cause wording", () => {
     expect(rca.confidence).not.toBe("high");
   });
 });
+
+import { buildReportDocumentText } from "@/lib/google/report-content";
+import { principlesForMessage } from "@/components/dashboard/ask-aria/ask-aria-principles";
+
+import { converse } from "./helpers";
+
+describe("root-cause analysis in the chat", () => {
+  it("keeps metric and platform from the previous question", () => {
+    const [, rca] = converse("ANALYST", ["Why did ROAS drop on Amazon?", "Run a root-cause analysis"]);
+    expect(rca.intent).toBe("root_cause_analysis");
+    const reply = rca.reply[0];
+    expect(reply.kind).toBe("rca");
+    if (reply.kind !== "rca") return;
+    expect(reply.rcaMetric).toBe("roas");
+    expect(reply.scopeLabel).toBe("Amazon");
+    expect(reply.summary).toMatch(/^Cost per click drives \d+% of the ROAS drop on Amazon/);
+    expect(reply.source?.scope).toBe("Amazon");
+    expect(principlesForMessage(reply)).toEqual(
+      expect.arrayContaining(["lead_with_insight", "show_source", "offer_next_step"]),
+    );
+  });
+
+  it("understands other phrasings", () => {
+    for (const q of ["What's driving the drop?", "RCA for gross sales", "root cause of the ROAS change"]) {
+      expect(converse("ANALYST", [q])[0].intent).toBe("root_cause_analysis");
+    }
+    expect(converse("ANALYST", ["Tell me about the arcade"])[0].intent).not.toBe("root_cause_analysis");
+  });
+
+  it("exports the RCA as a report with the driver breakdown", () => {
+    const turns = converse("ANALYST", [
+      "Why did ROAS drop on Amazon?",
+      "Run a root-cause analysis",
+      "Create an RCA report",
+    ]);
+    const preview = turns[2].reply[0];
+    expect(preview.kind).toBe("action_preview");
+    if (preview.kind !== "action_preview") return;
+    expect(preview.draft.reportRcaMetric).toBe("roas");
+    expect(preview.draft.reportTitle).toBe("Root-cause analysis — ROAS (Amazon)");
+
+    const text = buildReportDocumentText({
+      title: preview.draft.reportTitle!,
+      platformId: "amazon",
+      dateRange,
+      comparisonRange: comparisonPeriod,
+      rcaMetric: "roas",
+    });
+    expect(text).toContain("ROAS = Ad sales per click ÷ Cost per click");
+    expect(text).toContain("Confidence:");
+    // Report % changes now have the right sign (ROAS fell on Amazon).
+    expect(text).toMatch(/roas: [\d.]+ \(-\d/);
+  });
+});

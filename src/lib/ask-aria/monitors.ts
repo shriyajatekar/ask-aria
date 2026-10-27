@@ -288,7 +288,7 @@ export function metricValuesForMonitor(
   const aggregation = getMetricAggregationType(monitor.metric);
   const cur = aggregateMetric(current, monitor.metric, aggregation);
   const prev = aggregateMetric(comparison, monitor.metric, aggregation);
-  const changePct = calculatePercentageChange(prev, cur);
+  const changePct = calculatePercentageChange(cur, prev);
   return { current: cur, previous: prev, changePct };
 }
 

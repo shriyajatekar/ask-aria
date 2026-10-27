@@ -673,6 +673,7 @@ export function buildRolePrioritizedInsightHandoffs(
 
   if (role === "ANALYST") {
     ordered = [
+      { label: "Run root-cause analysis", prompt: "Run a root-cause analysis" },
       ...(options.platformId
         ? [
             {
@@ -699,6 +700,7 @@ export function buildRolePrioritizedInsightHandoffs(
     ];
   } else if (role === "KAM") {
     ordered = [
+      { label: "Run root-cause analysis", prompt: "Run a root-cause analysis" },
       {
         label: "Show account impact",
         prompt: `Show account impact for ${platformName}`,

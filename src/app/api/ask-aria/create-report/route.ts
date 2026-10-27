@@ -9,6 +9,7 @@ import type { DateRange, PlatformId } from "@/types/analytics";
 
 interface CreateReportBody {
   title?: string;
+  rcaMetric?: "gross_sales" | "roas";
   reportPeriodLabel?: string;
   platformId?: PlatformId | "all";
   dateRange?: DateRange;
@@ -65,6 +66,10 @@ export async function POST(request: Request) {
     comparisonRange: body.comparisonRange,
     brandId: body.brandId,
     productId: body.productId,
+    rcaMetric:
+      body.rcaMetric === "roas" || body.rcaMetric === "gross_sales"
+        ? body.rcaMetric
+        : undefined,
   });
 
   try {

@@ -63,6 +63,8 @@ export interface AskAriaActionDraft {
   reportTitle?: string;
   reportPeriodLabel?: string;
   reportPlatformScope?: string;
+  /** Set when the report is a root-cause analysis export. */
+  reportRcaMetric?: "gross_sales" | "roas";
   keywordsPausedCount?: number;
   categoryLabel?: string;
   reallocateAmount?: number;
@@ -105,6 +107,25 @@ export interface AskAriaInsightSection {
   id?: string;
   heading: string;
   lines: string[];
+}
+
+/** One driver in a root-cause waterfall. */
+export interface AskAriaRcaDriverRow {
+  label: string;
+  from: string;
+  to: string;
+  changePct: string;
+  /** Formatted signed contribution in the metric's units, e.g. "-0.32" or "-₹1.6L". */
+  contribution: string;
+  /** Share of the push in the metric's direction (0–100); negative = offset. */
+  sharePct: number;
+  role: "cause" | "offset" | "minor";
+}
+
+/** A platform or product's share of the change. */
+export interface AskAriaRcaShareRow {
+  label: string;
+  sharePct: number;
 }
 
 /** Where an answer's numbers come from — shown on every analysis answer. */
@@ -200,6 +221,31 @@ export type AskAriaMessage =
       text: string;
       /** Grouped suggestion chips after capability discovery responses. */
       suggestionChips?: Array<{ label: string; prompt: string }>;
+      createdAt: number;
+    }
+  | {
+      id: string;
+      kind: "rca";
+      title: string;
+      /** Lead sentence: the top cause and how much it explains. */
+      summary: string;
+      rcaMetric: "gross_sales" | "roas";
+      metricLabel: string;
+      scopeLabel: string;
+      /** e.g. "ROAS 3.49 → 3.08 (-11.6%)" */
+      totalLine: string;
+      /** e.g. "ROAS = Ad sales per click ÷ Cost per click" */
+      formula: string;
+      drivers: AskAriaRcaDriverRow[];
+      platforms: AskAriaRcaShareRow[];
+      products: AskAriaRcaShareRow[];
+      ruledOut: string[];
+      otherSignals: string[];
+      confidence: "high" | "medium" | "low";
+      confidenceReason: string;
+      caveat?: string;
+      source?: AskAriaAnswerSource;
+      handoffs?: AskAriaHandoff[];
       createdAt: number;
     }
   | {
