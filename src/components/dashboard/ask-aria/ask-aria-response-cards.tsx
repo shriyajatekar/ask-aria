@@ -77,7 +77,7 @@ export function AskAriaMessageList({
       aria-label="Conversation with Ask Aria"
     >
       {visibleMessages.map((message) => (
-        <div key={message.id} className="min-w-0">
+        <div key={message.id} className="min-w-0 motion-safe:animate-enter">
           <AskAriaMessageCard
             message={message}
             onConfirmAction={onConfirmAction}

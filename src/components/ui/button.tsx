@@ -8,7 +8,7 @@ const buttonVariants = cva(
   [
     "inline-flex items-center justify-center gap-2 whitespace-nowrap",
     "type-body-medium",
-    "rounded-md transition-colors",
+    "rounded-md transition-[background-color,border-color,color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] active:scale-[0.98]",
     "disabled:pointer-events-none disabled:opacity-50",
     "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-interactive",
   ],
@@ -18,7 +18,7 @@ const buttonVariants = cva(
         primary:
           "border border-transparent bg-accent-interactive text-white hover:bg-primary-hover",
         secondary:
-          "border border-border bg-white text-text-primary hover:bg-surface-hover",
+          "border border-border-strong bg-surface text-text-primary hover:border-text-tertiary hover:bg-surface-hover",
         tertiary:
           "border border-transparent bg-transparent text-text-primary hover:bg-surface-hover",
         destructive:

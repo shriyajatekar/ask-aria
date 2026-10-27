@@ -147,7 +147,7 @@ export function AskAriaPanel() {
         aria-modal="true"
         aria-labelledby="ask-aria-panel-title"
         className={cn(
-          "fixed z-40 flex min-h-0 min-w-0 flex-col bg-surface shadow-md",
+          "fixed z-40 flex min-h-0 min-w-0 flex-col bg-surface shadow-md motion-safe:md:animate-panel-in motion-safe:max-md:animate-enter",
           panelTop,
           panelHeight,
           "right-0 bottom-0 w-full max-w-[440px] border-l border-border",
