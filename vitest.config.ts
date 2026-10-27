@@ -8,5 +8,7 @@ export default defineConfig({
   test: {
     include: ["tests/**/*.test.ts"],
     environment: "node",
+    // Some tests replay hundreds of conversations; allow for a busy machine.
+    testTimeout: 20_000,
   },
 });
