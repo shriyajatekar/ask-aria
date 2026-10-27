@@ -11,137 +11,140 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { aggregateMetric } from "@/lib/analytics/comparisons";
-import { useDashboardAnalytics } from "@/lib/dashboard/use-dashboard-analytics";
-import {
-  getMetricAggregationType,
-} from "@/lib/dashboard/filter-records";
-import { formatMetricValue } from "@/lib/dashboard/format-metric";
+import { useAuth } from "@/contexts/auth-provider";
+import { useDashboard } from "@/contexts/dashboard-context";
+import { loadTrackedActions, outcomesFor } from "@/lib/ask-aria/tracked-actions";
+import { PLATFORM_BY_ID } from "@/data/platforms";
 import { cn } from "@/lib/cn";
 
 import { extractLastWorkspaceArtifact } from "./ask-aria/ask-aria-artifacts";
 import { useAskAria } from "./ask-aria/ask-aria-context";
+import { describeOutcome } from "./ask-aria/ask-aria-outcomes";
+import {
+  describeSituation,
+  situationsForContext,
+} from "./ask-aria/ask-aria-situations";
 
-type NotificationId =
-  | "roas-movement"
-  | "monitor-alert"
-  | "analysis-ready"
-  | "report-artifact";
-
-type DemoNotification = {
-  id: NotificationId;
+type Notification = {
+  id: string;
   title: string;
   body: string;
+  /** Secondary line, e.g. what happened last time. */
+  detail?: string;
   timeLabel: string;
   actionLabel: string;
-  demoOnly?: boolean;
+  onAction: () => void;
 };
 
-const AMAZON_ROAS_INVESTIGATE_PROMPT =
-  "Why did Amazon ROAS drop 8.4% compared to the prior period? Investigate drivers across campaigns and placements.";
-
+/**
+ * Notifications are real: situation alerts detected from the data for the
+ * current filters (with what happened last time), plus a link to a report
+ * created in this session. Nothing here is hard-coded.
+ */
 export function DashboardNotificationCenter() {
-  const {
-    messages,
-    openPanel,
-    runProactivePrompt,
-    openToolsSheet,
-  } = useAskAria();
-  const { currentRecords, comparisonRecords } = useDashboardAnalytics();
+  const { messages, runProactivePrompt } = useAskAria();
+  const { user } = useAuth();
+  const dashboard = useDashboard();
 
-  const analysisSummary = useMemo(() => {
-    const aggregation = getMetricAggregationType("gross_sales");
-    const current = aggregateMetric(currentRecords, "gross_sales", aggregation);
-    const comparison = aggregateMetric(
-      comparisonRecords,
-      "gross_sales",
-      aggregation,
-    );
-    if (!current && !comparison) {
-      return "Portfolio analysis is ready for your selected filters.";
-    }
-    return `Gross sales ${formatMetricValue("gross_sales", current)} in the current window (comparison ${formatMetricValue("gross_sales", comparison)}).`;
-  }, [comparisonRecords, currentRecords]);
+  const situations = useMemo(
+    () =>
+      situationsForContext({
+        dateRange: dashboard.dateRange,
+        comparisonPeriod: dashboard.comparisonPeriod,
+        brandId: dashboard.brandId,
+        category: dashboard.category,
+        subcategory: dashboard.subcategory,
+        productId: dashboard.productId,
+      }).map(describeSituation),
+    [
+      dashboard.dateRange,
+      dashboard.comparisonPeriod,
+      dashboard.brandId,
+      dashboard.category,
+      dashboard.subcategory,
+      dashboard.productId,
+    ],
+  );
 
   const artifact = useMemo(
     () => extractLastWorkspaceArtifact(messages),
     [messages],
   );
 
-  const notifications = useMemo((): DemoNotification[] => {
-    const reportBody = artifact
-      ? "A workspace report from this session is available to open."
-      : "Sample report notification — create a report in Ask Aria to link a real artifact.";
+  const notifications = useMemo((): Notification[] => {
+    const alerts: Notification[] = situations.map((situation) => ({
+      id: situation.id,
+      title: situation.title,
+      body: situation.summary,
+      detail: situation.pastLine,
+      timeLabel: situation.severity === "high" ? "Needs attention" : "Worth watching",
+      actionLabel: "Deep dive in Aria",
+      onAction: () => runProactivePrompt(situation.deepDivePrompt),
+    }));
+    // "Did it work?": changes with enough data after them to judge.
+    for (const result of outcomesFor(loadTrackedActions(user?.id))) {
+      if (result.verdict === "too_early") continue;
+      const copy = describeOutcome(result);
+      alerts.push({
+        id: `outcome-${result.action.id}`,
+        title: `Did it work? ${copy.verdictLabel}`,
+        body: copy.title,
+        detail: copy.detail,
+        timeLabel: result.action.example ? "Example" : "Outcome ready",
+        actionLabel: "See outcome in Aria",
+        onAction: () => runProactivePrompt("Did it work?"),
+      });
+    }
 
-    return [
-      {
-        id: "roas-movement",
-        title: "ROAS movement",
-        body: "Amazon ROAS dropped 8.4% versus the comparison period.",
-        timeLabel: "Just now",
-        actionLabel: "Investigate",
-      },
-      {
-        id: "monitor-alert",
-        title: "Monitor alert",
-        body: "A simulated ROAS threshold was crossed on Amazon.",
-        timeLabel: "12m ago",
-        actionLabel: "View monitor",
-      },
-      {
-        id: "analysis-ready",
-        title: "Analysis ready",
-        body: analysisSummary,
-        timeLabel: "1h ago",
-        actionLabel: "Open Aria",
-      },
-      {
+    // A confirmed bid change that the trend check flagged.
+    const riskyBid = [...messages]
+      .reverse()
+      .find(
+        (m) =>
+          m.kind === "action_result" &&
+          (m.status === "scheduled" || m.status === "completed") &&
+          m.draft.bidRisk &&
+          m.draft.bidRisk.level !== "none",
+      );
+    if (riskyBid?.kind === "action_result" && riskyBid.draft.bidRisk) {
+      const { draft } = riskyBid;
+      const risk = riskyBid.draft.bidRisk;
+      alerts.unshift({
+        id: `bid-risk-${draft.id}`,
+        title: `${draft.isImmediate ? "Bid change" : "Scheduled bid"} may be risky`,
+        body: `₹${draft.newBid} on ${draft.campaignName ?? "the campaign"}${draft.isImmediate ? "" : ` · ${draft.scheduledLabel ?? "scheduled"}`}. ${risk.reasons[0] ?? ""}`,
+        detail: risk.suggestion ?? undefined,
+        timeLabel: risk.level === "high" ? "Needs attention" : "Worth watching",
+        actionLabel: "Review in Aria",
+        onAction: () =>
+          runProactivePrompt(
+            `Set bid to ₹${draft.newBid} on ${PLATFORM_BY_ID[draft.platformId ?? "amazon"]?.name ?? "Amazon"} campaign ${draft.campaignName ?? ""}`.trim(),
+          ),
+      });
+    }
+    if (artifact?.url) {
+      alerts.push({
         id: "report-artifact",
-        title: "Report artifact",
-        body: reportBody,
-        timeLabel: "2h ago",
-        actionLabel: artifact ? "Open report" : "View demo",
-        demoOnly: !artifact,
-      },
-    ];
-  }, [analysisSummary, artifact]);
+        title: "Report ready",
+        body: "A report from this session is ready to open.",
+        timeLabel: "This session",
+        actionLabel: "Open report",
+        onAction: () => window.open(artifact.url, "_blank", "noopener,noreferrer"),
+      });
+    }
+    return alerts;
+  }, [artifact, messages, runProactivePrompt, situations, user?.id]);
 
-  const [readIds, setReadIds] = useState<Set<NotificationId>>(() => new Set());
+  const [readIds, setReadIds] = useState<Set<string>>(() => new Set());
   const unreadCount = notifications.filter((n) => !readIds.has(n.id)).length;
 
   function markAllRead() {
     setReadIds(new Set(notifications.map((n) => n.id)));
   }
 
-  function markRead(id: NotificationId) {
-    setReadIds((current) => new Set([...current, id]));
-  }
-
-  function handleAction(notification: DemoNotification) {
-    markRead(notification.id);
-    switch (notification.id) {
-      case "roas-movement":
-        runProactivePrompt(AMAZON_ROAS_INVESTIGATE_PROMPT);
-        return;
-      case "monitor-alert":
-        openToolsSheet("monitoring");
-        return;
-      case "analysis-ready":
-        openPanel();
-        return;
-      case "report-artifact":
-        if (artifact?.url) {
-          window.open(artifact.url, "_blank", "noopener,noreferrer");
-        } else {
-          openPanel();
-          runProactivePrompt(
-            "Summarize the latest portfolio performance and offer to create a shareable report.",
-          );
-        }
-        return;
-      default:
-        return;
-    }
+  function handleAction(notification: Notification) {
+    setReadIds((current) => new Set([...current, notification.id]));
+    notification.onAction();
   }
 
   return (
@@ -185,7 +188,12 @@ export function DashboardNotificationCenter() {
           ) : null}
         </div>
         <DropdownMenuSeparator className="m-0" />
-        <ul className="max-h-[min(60vh,20rem)] overflow-y-auto py-1">
+        {notifications.length === 0 ? (
+          <p className="px-3 py-4 type-small text-text-secondary">
+            Nothing needs attention for these filters.
+          </p>
+        ) : null}
+        <ul className="max-h-[min(60vh,24rem)] overflow-y-auto py-1">
           {notifications.map((notification) => {
             const unread = !readIds.has(notification.id);
             return (
@@ -217,13 +225,17 @@ export function DashboardNotificationCenter() {
                     <p className="type-small text-text-secondary">
                       {notification.body}
                     </p>
+                    {notification.detail ? (
+                      <p className="type-small text-text-tertiary">
+                        {notification.detail}
+                      </p>
+                    ) : null}
                     <button
                       type="button"
                       className="type-small font-medium text-accent-interactive hover:underline"
                       onClick={() => handleAction(notification)}
                     >
                       {notification.actionLabel}
-                      {notification.demoOnly ? " (demo)" : ""}
                     </button>
                   </div>
                 </div>

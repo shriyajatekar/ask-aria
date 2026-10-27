@@ -27,6 +27,21 @@ import {
   buildProactiveInsight,
   processAskAriaMessage,
 } from "./ask-aria-intelligence";
+import { classifyIntent } from "./ask-aria-intent";
+import { translateHinglish } from "./ask-aria-hinglish";
+import { understandWithAi } from "./ask-aria-ai-client";
+import { METRIC_BY_ID } from "@/data/metrics";
+import {
+  loadFeedback,
+  loadUnanswered,
+  logUnanswered,
+  summariseFeedback,
+} from "@/lib/ask-aria/feedback";
+import {
+  loadTrackedActions,
+  saveTrackedAction,
+  trackableFromDraft,
+} from "@/lib/ask-aria/tracked-actions";
 import {
   mapDashboardToAskAriaView,
   toFullContext,
@@ -241,6 +256,7 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
   }, [userId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Monitors live in browser storage, so they are loaded after mount and when the user changes.
     refreshMonitors();
   }, [refreshMonitors, userId]);
 
@@ -312,6 +328,7 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!userId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Conversations live in browser storage, so they are loaded after mount and reloaded when the user changes.
       clearAskAriaTransientState();
       return;
     }
@@ -480,6 +497,7 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
     const proactive = buildProactiveInsight(reasoningContext);
     if (!proactive) return;
     proactiveShownForConversation.current.add(threadConversationId);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Shows one proactive insight when an empty thread opens; guarded by a ref so it runs once.
     appendMessages([proactive], conversationMemory, undefined, threadConversationId);
   }, [
     appendMessages,
@@ -491,7 +509,7 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
     threadConversationId,
   ]);
 
-  const submitQuestion = useCallback(() => {
+  const submitQuestion = useCallback(async () => {
     const text = inputValue.trim();
     if (!text) return;
     setIsSubmitting(true);
@@ -506,18 +524,49 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
     const contextForTurn =
       conversation?.savedContext ?? liveContext;
     const roleForTurn = conversation?.role ?? role;
-    const result = processAskAriaMessage(
-      text,
-      contextForTurn,
-      memory,
-      roleForTurn,
-      workspaceConnection,
-      {
-        recentMessages: conversation?.messages ?? [],
-        appUserEmail: user?.email,
-        activeMonitors: monitors,
-      },
-    );
+    const run = (question: string) =>
+      processAskAriaMessage(
+        question,
+        contextForTurn,
+        memory,
+        roleForTurn,
+        workspaceConnection,
+        {
+          recentMessages: conversation?.messages ?? [],
+          appUserEmail: user?.email,
+          activeMonitors: monitors,
+          trackedActions: loadTrackedActions(userId),
+          feedbackSummary: summariseFeedback(loadFeedback(userId), loadUnanswered(userId)),
+        },
+      );
+
+    // Aria's own rules answer first. Only when they can't read the question
+    // is the AI asked to map it onto a question Aria knows; if the AI is off
+    // or fails, the rules' honest "I'm not sure" reply stands.
+    let result = run(text);
+    if (classifyIntent(translateHinglish(text) ?? text, memory, contextForTurn) === "unknown") {
+      setInputValue("");
+      const understood = await understandWithAi(text);
+      // Log questions neither the rules nor the AI could read.
+      if (!understood && userId) logUnanswered(userId, text);
+      if (understood) {
+        const rewritten = run(understood);
+        const [userMessage, ...replies] = rewritten.messages;
+        result = {
+          memory: rewritten.memory,
+          messages: [
+            userMessage?.kind === "user" ? { ...userMessage, text } : userMessage,
+            {
+              id: createMessageId(),
+              kind: "assistant_text",
+              text: `I read this as: “${understood}”`,
+              createdAt: Date.now(),
+            },
+            ...replies,
+          ].filter(Boolean) as AskAriaMessage[],
+        };
+      }
+    }
     appendMessages(
       result.messages,
       result.memory,
@@ -528,6 +577,7 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
     setIsSubmitting(false);
   }, [
     appendMessages,
+    userId,
     conversations,
     ensureSubmitConversationId,
     inputValue,
@@ -561,6 +611,8 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
           recentMessages: conversation?.messages ?? [],
           appUserEmail: user?.email,
           activeMonitors: monitors,
+          trackedActions: loadTrackedActions(userId),
+          feedbackSummary: summariseFeedback(loadFeedback(userId), loadUnanswered(userId)),
         },
       );
       appendMessages(
@@ -570,9 +622,12 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
         targetConversationId,
       );
       setInputValue("");
+      // Prompts started outside the panel (bell, KPI cards) must show the answer.
+      setOpen(true);
     },
     [
       appendMessages,
+      userId,
       conversations,
       ensureSubmitConversationId,
       liveContext,
@@ -596,7 +651,7 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
               id: createMessageId(),
               kind: "assistant_text",
               text:
-                "This is a draft for review only. Use Send or confirm send when you're ready to deliver via Gmail.",
+                "This is a draft for review only. Say \"Send this\" when you're ready, and confirm before it goes out.",
               createdAt: Date.now(),
             },
           ],
@@ -846,6 +901,20 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
             result = mockExecuteAction(draft);
           }
           const completedMessages: AskAriaMessage[] = [result];
+          // Bid, budget and keyword changes get a before/after check later.
+          const tracked =
+            userId && result.kind === "action_result" && result.status === "completed"
+              ? trackableFromDraft(draft, new Date().toISOString().slice(0, 10))
+              : null;
+          if (userId && tracked) {
+            saveTrackedAction(userId, tracked);
+            completedMessages.push({
+              id: createMessageId(),
+              kind: "assistant_text",
+              text: `Tracking this change. I'll compare ${METRIC_BY_ID[tracked.metric]?.name ?? tracked.metric} before and after it; ask “Did it work?” from ${new Date(Date.parse(tracked.date) + 3 * 86_400_000).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}.`,
+              createdAt: Date.now(),
+            });
+          }
           if (
             result.kind === "action_result" &&
             result.status === "completed" &&
@@ -1189,6 +1258,7 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
   }, [createEmptyConversation, upsertConversation, userId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Google connection status is fetched from the server after load.
     void refreshGoogleWorkspaceStatus();
   }, [refreshGoogleWorkspaceStatus, toolsConnectedTick, userId]);
 

@@ -68,16 +68,16 @@ export function buildSpreadsheetData(
     case "platform_comparison": {
       const headers = [
         "Platform",
-        "Revenue",
+        "Gross Sales",
         "Orders",
         "ROAS",
         "Conversion rate",
-        "Revenue growth %",
+        "Gross Sales growth %",
       ];
       const breakdown = getPlatformBreakdown(current, previous);
       const rows = breakdown.map((row) => [
         platformName(row.platformId),
-        String(Math.round(row.revenue)),
+        String(Math.round(row.grossSales)),
         String(Math.round(row.orders)),
         row.roas.toFixed(2),
         row.conversion.toFixed(2),

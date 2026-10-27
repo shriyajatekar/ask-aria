@@ -185,7 +185,6 @@ export function formatInsightFromEvidence(
     metricId,
     metricLabel,
     platformLabel,
-    directionWord,
     primaryPct,
     primaryCur,
     primaryPrev,
@@ -209,26 +208,36 @@ export function formatInsightFromEvidence(
     conversionPct,
   );
 
-  const movementAssociationLine = largestPlatformName
-    ? `${largestPlatformName} shows the largest associated platform movement.`
-    : platformLabel !== "selected platforms"
-      ? `Review ${platformLabel} for the largest associated shift.`
-      : "Use platform and product views to see platform-level movement.";
+  // Lead sentence: the finding with its number, no double negatives
+  // ("fell 11.5%", never "declined -11.5%").
+  const verb =
+    evidence.primaryDirection === "down"
+      ? "fell"
+      : evidence.primaryDirection === "up"
+        ? "rose"
+        : "held steady at";
+  const unsignedPct = primaryPct.replace(/^[+-]/, "");
+  const where = platformLabel === "all platforms" ? "" : ` on ${platformLabel}`;
+  const lead =
+    evidence.primaryDirection === "flat"
+      ? `${metricLabel}${where} ${verb} ${formatPrimary(primaryCur)} vs the comparison period.`
+      : `${metricLabel}${where} ${verb} ${unsignedPct} to ${formatPrimary(primaryCur)} vs the comparison period.`;
+  const movedMost = largestPlatformName
+    ? ` ${largestPlatformName} moved most.`
+    : "";
 
   const whatChangedAlongsideLines = [
     ordersMovementLine,
     conversionMovementLine,
     ...(largestPlatformName
-      ? [`${largestPlatformName} shows the largest associated platform movement.`]
-      : platformLabel !== "selected platforms"
-        ? [`Review ${platformLabel} for associated platform movement.`]
-        : []),
+      ? [`${largestPlatformName} had the largest platform-level change.`]
+      : []),
   ];
 
   if (role === "CXO") {
     return {
       title: `Executive summary — ${metricLabel}`,
-      summary: `${metricLabel} ${directionWord} ${primaryPct} versus the comparison period. The movement is relevant to overall marketing efficiency${largestPlatformName ? `, with ${largestPlatformName} showing the largest associated change` : ` on ${platformLabel}`}.`,
+      summary: `${lead}${movedMost}`,
       sections: [
         insightSection("executive_summary", "Executive summary", [
           `${metricLabel} moved from ${formatPrimary(primaryPrev)} to ${formatPrimary(primaryCur)} (${primaryPct}) in the active workspace window.`,
@@ -253,7 +262,9 @@ export function formatInsightFromEvidence(
   if (role === "KAM") {
     return {
       title: `${metricLabel} — account view`,
-      summary: `${metricLabel} ${directionWord} ${primaryPct} versus the comparison period. ${movementAssociationLine}${largestPlatformName ? " This may warrant account follow-up." : ""}`,
+      summary: largestPlatformName
+        ? `${lead} ${largestPlatformName} moved most, worth raising with the account.`
+        : lead,
       sections: [
         insightSection("business_impact", "Business impact", [
           `${metricLabel} is ${formatPrimary(primaryCur)} versus ${formatPrimary(primaryPrev)} (${primaryPct}) across the current selection.`,
@@ -278,7 +289,7 @@ export function formatInsightFromEvidence(
 
   return {
     title: `${metricLabel} — investigation`,
-    summary: `${metricLabel} ${directionWord} ${primaryPct} versus the comparison period. ${movementAssociationLine}`,
+    summary: `${lead}${movedMost}`,
     sections: [
       insightSection("what_happened", "What happened", [
         `${metricLabel} changed from ${formatPrimary(primaryPrev)} to ${formatPrimary(primaryCur)} (${primaryPct}) versus the comparison period.`,
@@ -310,6 +321,15 @@ export interface BrandMovementRow {
   pct: number;
   current: number;
   previous: number;
+}
+
+function brandLead(declining: BrandMovementRow[]): string {
+  const worst = declining[0];
+  if (!worst) return "No brand lost revenue in the current filters.";
+  const others = declining.length - 1;
+  return `${worst.brandName} needs attention first: revenue ${formatPct(worst.pct)} vs the comparison period${
+    others > 0 ? `, and ${others} other brand${others === 1 ? " is" : "s are"} also down` : ""
+  }.`;
 }
 
 export function formatBrandAnalysis(
@@ -355,7 +375,7 @@ export function formatBrandAnalysis(
   if (role === "KAM") {
     return {
       title: "Brands needing attention",
-      summary: "Account-level revenue movement for the active workspace filters.",
+      summary: brandLead(declining),
       sections: [
         insightSection(
           "accounts_to_review",
@@ -383,7 +403,7 @@ export function formatBrandAnalysis(
 
   return {
     title: "Brand performance investigation",
-    summary: "Brands ranked by revenue change versus the comparison period.",
+    summary: brandLead(declining),
     sections: [
       insightSection(
         "declining_brands_evidence",
@@ -523,9 +543,18 @@ export function formatProductsFollowUp(
     options.investigationDirection === "down" &&
     useMetricLines &&
     !rankingByRevenue;
-  const revenueWithinInvestigationSummary = rankingByRevenue
-    ? `Products with the largest revenue movement within this ${metricLabel} investigation in ${scopeLabel}.`
-    : null;
+  const first = limited[0];
+  const firstName = first
+    ? PRODUCT_BY_ID[first.productId]?.name ?? first.productId
+    : undefined;
+  // Lead with the top product and its number, not a description of the list.
+  const topLead = first
+    ? `${firstName} moved most: ${valueLabel} ${formatPct(first.pct)} on ${scopeLabel}.`
+    : `No product-level change found in ${scopeLabel}.`;
+  const revenueWithinInvestigationSummary =
+    rankingByRevenue && first
+      ? `${firstName} had the largest revenue change in this ${metricLabel} investigation: ${formatPct(first.pct)} in ${scopeLabel}.`
+      : null;
 
   if (role === "CXO") {
     const top = limited[0];
@@ -539,7 +568,7 @@ export function formatProductsFollowUp(
         revenueWithinInvestigationSummary ??
         (honestMovement
           ? `No SKU-level ${metricLabel} decline is clear in ${scopeLabel}; ${topName} shows the largest ${metricLabel} movement in scope.`
-          : `${rows.length} product${rows.length === 1 ? "" : "s"} with notable ${valueLabel} movement in ${scopeLabel}.`),
+          : topLead),
       lines: top
         ? [
             `${topName}: ${valueLabel} ${formatPct(top.pct)} vs comparison period (largest movement in scope).`,
@@ -557,7 +586,7 @@ export function formatProductsFollowUp(
         revenueWithinInvestigationSummary ??
         (honestMovement
           ? `Product-level ${metricLabel} does not clearly explain the account move; these SKUs show the largest ${metricLabel} movement within ${scopeLabel}.`
-          : `Largest ${valueLabel} movement related to ${metricLabel} within ${scopeLabel}.`),
+          : topLead),
       lines: limited.length
         ? limited.map((row) => {
             const name = PRODUCT_BY_ID[row.productId]?.name ?? row.productId;
@@ -576,7 +605,7 @@ export function formatProductsFollowUp(
       revenueWithinInvestigationSummary ??
       (honestMovement
         ? `No clear product-level ${metricLabel} decline in ${scopeLabel}; listed SKUs show the largest ${metricLabel} movement in this scope (not necessarily the driver of the change).`
-        : `Largest ${valueLabel} movement for ${metricLabel} within ${scopeLabel}.`),
+        : topLead),
     lines: limited.length
       ? limited.map((row) => {
           const name = PRODUCT_BY_ID[row.productId]?.name ?? row.productId;
@@ -597,7 +626,7 @@ function formatAssociatedMetricMovement(
   pct: string,
 ): string {
   if (direction === "up") {
-    return `${label} increased ${pct}.`;
+    return `${label} rose ${pct.replace(/^[+-]/, "")}.`;
   }
   if (direction === "down") {
     const magnitude = pct.startsWith("-") || pct.startsWith("+")
@@ -644,6 +673,7 @@ export function buildRolePrioritizedInsightHandoffs(
 
   if (role === "ANALYST") {
     ordered = [
+      { label: "Run root-cause analysis", prompt: "Run a root-cause analysis" },
       ...(options.platformId
         ? [
             {
@@ -670,6 +700,7 @@ export function buildRolePrioritizedInsightHandoffs(
     ];
   } else if (role === "KAM") {
     ordered = [
+      { label: "Run root-cause analysis", prompt: "Run a root-cause analysis" },
       {
         label: "Show account impact",
         prompt: `Show account impact for ${platformName}`,

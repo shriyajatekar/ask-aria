@@ -24,13 +24,13 @@ export function AskAriaTrigger({ compact = false }: { compact?: boolean }) {
           ? "h-9 w-9 rounded-md"
           : "h-9 gap-2 rounded-[10px] px-2 sm:px-3",
       )}
-      aria-label={compact ? "Ask Aria" : undefined}
+      aria-label="Ask Aria"
     >
       <span className="text-[13px] text-text-tertiary" aria-hidden>
         ✦
       </span>
       {!compact ? (
-        <span className="hidden type-body-medium text-text-primary sm:inline">
+        <span className="type-body-medium whitespace-nowrap text-text-primary">
           Ask Aria
         </span>
       ) : null}

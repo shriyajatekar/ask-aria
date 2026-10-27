@@ -1,4 +1,6 @@
+import { PERFORMANCE_DATE_RANGE } from "@/data/scenarios";
 import type { UserRole } from "@/lib/auth/types";
+import { getDefaultDashboardRanges } from "@/lib/dashboard/date-ranges";
 import type { PlatformId } from "@/types/analytics";
 
 import type {
@@ -37,8 +39,7 @@ function defaultSavedContext(): AskAriaFullContext {
     consolidatedChartMetric: "gross_sales",
     consolidatedSelectedPlatformIds: [],
     dateRangePreset: "30",
-    dateRange: { start: "2026-01-01", end: "2026-01-31" },
-    comparisonPeriod: { start: "2025-12-01", end: "2025-12-31" },
+    ...getDefaultDashboardRanges(),
     brandId: null,
     category: null,
     subcategory: null,
@@ -119,6 +120,13 @@ function normalizeConversation(
     );
   } else {
     savedContext = { ...defaultSavedContext(), role };
+  }
+
+  // The demo timeline rolls forward daily. A conversation saved with periods
+  // that have since dropped out of the dataset continues on the current ones.
+  if (savedContext.comparisonPeriod.start < PERFORMANCE_DATE_RANGE.start) {
+    const { dateRange, comparisonPeriod } = getDefaultDashboardRanges();
+    savedContext = { ...savedContext, dateRangePreset: "30", dateRange, comparisonPeriod };
   }
 
   const title =

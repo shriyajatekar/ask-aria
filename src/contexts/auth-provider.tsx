@@ -51,6 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (session && isDemoPortfolioUser(session.id) && !getDemoPortfolioSessionId()) {
       beginDemoPortfolioSession();
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- The session lives in browser storage, which the server cannot read, so it is loaded after mount.
     setUser(session);
     void syncAppSessionCookie(session?.id ?? null);
     setIsLoading(false);

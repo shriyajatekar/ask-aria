@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 
@@ -30,6 +30,29 @@ function shouldShowSuggestions(
   return false;
 }
 
+const DESIGN_NOTES_KEY = "ask-aria-design-notes";
+
+/** Remembers the "Design notes" toggle per browser; works without storage too. */
+function useDesignNotesPreference(): [boolean, (value: boolean) => void] {
+  const [value, setValue] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return window.localStorage.getItem(DESIGN_NOTES_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const update = (next: boolean) => {
+    setValue(next);
+    try {
+      window.localStorage.setItem(DESIGN_NOTES_KEY, next ? "1" : "0");
+    } catch {
+      // Storage blocked: the toggle still works for this visit.
+    }
+  };
+  return [value, update];
+}
+
 export function AskAriaPanel() {
   const {
     open,
@@ -52,6 +75,41 @@ export function AskAriaPanel() {
 
   const [suggestionsExpanded, setSuggestionsExpanded] = useState(false);
   const [commandCenterOpen, setCommandCenterOpen] = useState(false);
+  const [showDesignNotes, setShowDesignNotes] = useDesignNotesPreference();
+  const panelRef = useRef<HTMLElement>(null);
+
+  // Modal dialog focus: move into the panel on open, return to the
+  // Ask Aria button on close.
+  useEffect(() => {
+    if (!open) return;
+    const returnTo = document.activeElement as HTMLElement | null;
+    document.getElementById("ask-aria-input")?.focus();
+    return () => {
+      const trigger =
+        returnTo && document.contains(returnTo)
+          ? returnTo
+          : document.querySelector<HTMLElement>('[aria-controls="ask-aria-panel"]');
+      trigger?.focus();
+    };
+  }, [open]);
+
+  // Keep Tab inside the open dialog.
+  const trapFocus = (event: React.KeyboardEvent<HTMLElement>) => {
+    if (event.key !== "Tab" || !panelRef.current) return;
+    const focusable = panelRef.current.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), [href], textarea:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    );
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
 
   const lastIsAssistant = useMemo(() => {
     const last = messages[messages.length - 1];
@@ -82,12 +140,14 @@ export function AskAriaPanel() {
       />
 
       <aside
+        ref={panelRef}
+        onKeyDown={trapFocus}
         id="ask-aria-panel"
         role="dialog"
         aria-modal="true"
         aria-labelledby="ask-aria-panel-title"
         className={cn(
-          "fixed z-40 flex min-h-0 min-w-0 flex-col bg-surface shadow-md",
+          "fixed z-40 flex min-h-0 min-w-0 flex-col bg-surface shadow-md motion-safe:md:animate-panel-in motion-safe:max-md:animate-enter",
           panelTop,
           panelHeight,
           "right-0 bottom-0 w-full max-w-[440px] border-l border-border",
@@ -101,12 +161,25 @@ export function AskAriaPanel() {
               Ask Aria
             </h2>
             <p className="type-small text-text-secondary">
-              Your commerce intelligence assistant
+              Scripted prototype · synthetic data
             </p>
             <AskAriaConnectedToolsLink
               onOpenCommandCenter={() => setCommandCenterOpen(true)}
             />
           </div>
+          <button
+            type="button"
+            onClick={() => setShowDesignNotes(!showDesignNotes)}
+            aria-pressed={showDesignNotes}
+            className={cn(
+              "ml-auto inline-flex min-h-11 shrink-0 items-center rounded-md border px-2.5 type-small transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-interactive",
+              showDesignNotes
+                ? "border-accent-interactive bg-background-secondary text-text-primary"
+                : "border-border text-text-secondary hover:text-text-primary",
+            )}
+          >
+            Design notes
+          </button>
           <button
             type="button"
             onClick={closePanel}
@@ -151,6 +224,7 @@ export function AskAriaPanel() {
                 onHandoff={applyHandoff}
                 onProactivePrompt={runProactivePrompt}
                 onClarificationChoice={handleClarificationChoice}
+                showDesignNotes={showDesignNotes}
               />
               <AskAriaContextualSuggestions visible />
               <AskAriaActionHistory entries={actionLog} />

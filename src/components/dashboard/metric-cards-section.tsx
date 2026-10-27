@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 
-import { ArrowDownRight, ArrowUpRight, Minus, Plus } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Minus, Plus, ScanSearch } from "lucide-react";
 
 import { METRIC_BY_ID } from "@/data/metrics";
+import { PLATFORM_BY_ID } from "@/data/platforms";
 import { TREND_METRIC_LIMIT, useDashboard } from "@/contexts/dashboard-context";
 import { useDashboardAnalytics } from "@/lib/dashboard/use-dashboard-analytics";
 import {
@@ -14,6 +15,7 @@ import {
 import { cn } from "@/lib/cn";
 import type { MetricId } from "@/types/analytics";
 
+import { useAskAria } from "./ask-aria/ask-aria-context";
 import { MetricSelectorDialog } from "./metric-selector";
 
 export function MetricCardsSection({
@@ -28,8 +30,18 @@ export function MetricCardsSection({
     toggleTrendMetric,
     consolidatedChartMetric,
     setConsolidatedChartMetric,
+    evidence,
   } = useDashboard();
   const { metricComparisons } = useDashboardAnalytics();
+  const { runProactivePrompt } = useAskAria();
+  const platformName = platform === "all" ? null : PLATFORM_BY_ID[platform]?.name;
+
+  // One click: open Aria with a full deep dive on this metric and platform.
+  function deepDive(metricName: string) {
+    runProactivePrompt(
+      `Deep dive into ${metricName}${platformName ? ` on ${platformName}` : ""}`,
+    );
+  }
   const [trendLimitMessage, setTrendLimitMessage] = useState<string | null>(
     null,
   );
@@ -92,6 +104,8 @@ export function MetricCardsSection({
                   : chartMetrics.includes(metricId)
               }
               onToggleTrend={() => handleMetricCardClick(metricId)}
+              onDeepDive={() => deepDive(definition.name)}
+              highlighted={evidence?.metricId === metricId}
               compact={isWorkspace}
             />
           );
@@ -143,6 +157,8 @@ function MetricCard({
   direction,
   selectedForTrend,
   onToggleTrend,
+  onDeepDive,
+  highlighted = false,
   compact = false,
 }: {
   metricId: MetricId;
@@ -153,6 +169,9 @@ function MetricCard({
   direction: "up" | "down" | "flat";
   selectedForTrend: boolean;
   onToggleTrend: () => void;
+  onDeepDive: () => void;
+  /** Pointed at by an Aria answer ("Show on dashboard"). */
+  highlighted?: boolean;
   compact?: boolean;
 }) {
   const isPositive = direction === "up";
@@ -162,16 +181,18 @@ function MetricCard({
     metricDirection === "lower_is_better" ? isNegative : isPositive;
 
   return (
+    <div className="relative min-w-0">
     <button
       type="button"
       title={description}
       onClick={onToggleTrend}
       className={cn(
-        "min-w-0 rounded-md border text-left transition-colors hover:bg-surface-hover",
+        "w-full min-w-0 rounded-md border pr-9 text-left transition-colors hover:bg-surface-hover",
         compact ? "p-3" : "px-2 py-2",
         selectedForTrend
           ? "border-accent-interactive bg-accent-subtle ring-1 ring-accent-interactive/20"
           : "border-border bg-white",
+        highlighted && "ring-2 ring-accent-interactive ring-offset-1",
       )}
     >
       <p className="truncate type-label text-text-secondary">{name}</p>
@@ -203,5 +224,16 @@ function MetricCard({
         </span>
       </p>
     </button>
+    {/* Separate button (buttons can't nest): one-click deep dive in Aria. */}
+    <button
+      type="button"
+      onClick={onDeepDive}
+      aria-label={`Deep dive into ${name} with Aria`}
+      title="Deep dive with Aria"
+      className="absolute right-1 top-1 inline-flex h-8 w-8 items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-accent-subtle hover:text-accent-interactive focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-interactive"
+    >
+      <ScanSearch className="h-4 w-4" aria-hidden />
+    </button>
+    </div>
   );
 }

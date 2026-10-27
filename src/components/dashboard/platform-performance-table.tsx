@@ -43,7 +43,7 @@ export function PlatformPerformanceTable() {
           Performance breakdown
         </h2>
         <p className="type-small text-text-tertiary">
-          Platform-level revenue, efficiency and growth from synthetic workspace data.
+          Gross Sales, efficiency and growth by platform (synthetic data).
         </p>
       </div>
 
@@ -52,7 +52,7 @@ export function PlatformPerformanceTable() {
           <thead className="sticky top-0 bg-white">
             <tr className="border-b border-border">
               <SortableHeader label="Platform" onSort={() => toggleSort("platformId")} />
-              <SortableHeader label="Revenue" align="right" onSort={() => toggleSort("revenue")} />
+              <SortableHeader label="Gross Sales" align="right" onSort={() => toggleSort("grossSales")} />
               <SortableHeader label="Orders" align="right" onSort={() => toggleSort("orders")} />
               <SortableHeader
                 label="Conversion"
@@ -66,12 +66,14 @@ export function PlatformPerformanceTable() {
           <tbody>
             {sorted.map((row) => {
               const selected = dashboard.platform === row.platformId;
+              const highlighted = dashboard.evidence?.platformId === row.platformId;
               return (
                 <tr
                   key={row.platformId}
                   className={cn(
                     "cursor-pointer border-b border-border-subtle hover:bg-surface-hover",
                     selected && "bg-background-tertiary",
+                    highlighted && "bg-accent-subtle",
                   )}
                   onClick={() => dashboard.setPlatform(row.platformId as PlatformId)}
                 >
@@ -79,7 +81,7 @@ export function PlatformPerformanceTable() {
                     {PLATFORM_BY_ID[row.platformId].name}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums">
-                    {formatMetricValue("revenue", row.revenue)}
+                    {formatMetricValue("gross_sales", row.grossSales)}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums">
                     {formatMetricValue("orders", row.orders)}

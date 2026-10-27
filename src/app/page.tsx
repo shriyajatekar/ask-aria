@@ -28,27 +28,32 @@ export default function Home() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-background px-8">
+    <main className="flex min-h-screen flex-col items-center justify-center bg-background px-4 sm:px-8">
       <div className="max-w-lg space-y-6 text-center">
         <p className="type-label uppercase tracking-wide text-text-tertiary">
-          Commerce Intelligence
+          Conceptual case study
         </p>
-        <h1 className="type-display">Turn commerce data into decisions.</h1>
-        <p className="type-body text-text-secondary">
-          Sign in to your workspace or explore the design system foundation.
+        <h1 className="type-display">Ask Aria</h1>
+        <p className="type-body text-text-primary">
+          A conversational assistant inside a commerce analytics dashboard: ask
+          why a number moved and get a sourced answer, a next step, and a
+          confirm-before-send action.
+        </p>
+        <p className="type-small text-text-secondary">
+          Synthetic data across 12 ecommerce &amp; quick-commerce platforms.
+          Every answer is calculated from that data. An AI model is only used,
+          when connected, to understand unusual phrasing, never to write
+          answers. Nothing is ever sent or created for real.
         </p>
         <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
-          <Link href="/sign-in">
-            <Button>Sign in</Button>
-          </Link>
-          <Link href="/sign-up">
-            <Button variant="secondary">Create workspace</Button>
-          </Link>
-          <Link href="/design-system">
-            <Button variant="tertiary">Design system</Button>
-          </Link>
+          <Button asChild>
+            <Link href="/sign-in">Try the demo</Link>
+          </Button>
+          <Button asChild variant="tertiary">
+            <Link href="/design-system">Design system</Link>
+          </Button>
         </div>
       </div>
-    </div>
+    </main>
   );
 }

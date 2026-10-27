@@ -13,6 +13,7 @@ import {
 import type { MetricId, PlatformId } from "@/types/analytics";
 
 import { CAPABILITY_EXPLORE_EXAMPLES } from "./ask-aria-capabilities";
+import { GOLDEN_PATH } from "./ask-aria-golden-path";
 
 export interface AskAriaDashboardView {
   role: UserRole;
@@ -364,6 +365,12 @@ export function buildWelcomeStartHerePrompts(
       .replace(/this metric/gi, metricName)
       .replace(/this platform/gi, platformName);
   });
+
+  // On the consolidated view, open with the role's golden-path question so
+  // the scripted interview path is always one click away.
+  if (isConsolidated) {
+    contextualized.unshift(GOLDEN_PATH[view.role][0].prompt);
+  }
 
   const unique: string[] = [];
   for (const prompt of contextualized) {

@@ -24,11 +24,37 @@ function filterRecordsByRange(
   return records.filter((record) => isWithinRange(record.date, range));
 }
 
+/**
+ * Ratio metrics are recomputed from their totals (total ad sales ÷ total ad
+ * spend), never as an average of daily ratios — averaging ratios gives a
+ * small day the same weight as a big one, and breaks driver breakdowns.
+ */
+const RATIO_METRICS: Partial<
+  Record<MetricId, { numerator: MetricId; denominator: MetricId; scale: number }>
+> = {
+  roas: { numerator: "ad_sales", denominator: "ad_spend", scale: 1 },
+  acos: { numerator: "ad_spend", denominator: "ad_sales", scale: 100 },
+  conversion_rate: { numerator: "orders", denominator: "sessions", scale: 100 },
+  average_order_value: { numerator: "revenue", denominator: "orders", scale: 1 },
+  cpc: { numerator: "ad_spend", denominator: "ad_clicks", scale: 1 },
+  ad_ctr: { numerator: "ad_clicks", denominator: "ad_impressions", scale: 100 },
+};
+
+export function isRatioMetric(metricId: MetricId): boolean {
+  return metricId in RATIO_METRICS;
+}
+
 function aggregateMetricForRange(
   records: PerformanceRecord[],
   metricId: MetricId,
   aggregation: "sum" | "average",
 ): number {
+  const ratio = RATIO_METRICS[metricId];
+  if (ratio) {
+    const denominator = sumMetricById(records, ratio.denominator);
+    if (denominator === 0) return 0;
+    return (sumMetricById(records, ratio.numerator) / denominator) * ratio.scale;
+  }
   if (aggregation === "sum") return sumMetricById(records, metricId);
   return averageMetricById(records, metricId);
 }

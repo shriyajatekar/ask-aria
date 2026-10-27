@@ -49,6 +49,7 @@ export function resolveDemoRecipientGroup(
   }
   if (
     lower.includes("kam") ||
+    /\bmy team\b/.test(lower) ||
     (lower.includes("account") && lower.includes("team"))
   ) {
     return DEMO_RECIPIENT_GROUPS.find((g) => g.id === "kam_team") ?? null;

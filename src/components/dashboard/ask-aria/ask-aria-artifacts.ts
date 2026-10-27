@@ -106,7 +106,32 @@ export function enrichReportDraftFromThread(
   partial: Partial<AskAriaActionDraft>,
   messages: AskAriaMessage[],
   memory: AskAriaInvestigationMemory,
+  options?: { rcaMetric?: "gross_sales" | "roas" },
 ): Partial<AskAriaActionDraft> {
+  // A root-cause report: the thread's latest RCA, or an explicit "RCA report".
+  const lastAnalysis = [...messages]
+    .reverse()
+    .find((m) => m.kind === "rca" || m.kind === "deep_dive");
+  const lastRca = lastAnalysis?.kind === "deep_dive" ? lastAnalysis.rca : lastAnalysis;
+  const rcaMetric =
+    options?.rcaMetric ?? (lastRca?.kind === "rca" ? lastRca.rcaMetric : undefined);
+  if (rcaMetric) {
+    const metricLabel = METRIC_BY_ID[rcaMetric]?.name ?? rcaMetric;
+    const scope =
+      (lastRca?.kind === "rca" ? lastRca.scopeLabel : undefined) ??
+      (memory.lastPlatform && memory.lastPlatform !== "all"
+        ? PLATFORM_BY_ID[memory.lastPlatform]?.name
+        : undefined) ??
+      "All platforms";
+    return {
+      ...partial,
+      reportTitle: `Root-cause analysis — ${metricLabel} (${scope})`,
+      reportRcaMetric: rcaMetric,
+      reportPeriodLabel: partial.reportPeriodLabel ?? "Current workspace period",
+      reportPlatformScope: scope,
+    };
+  }
+
   const ctx = extractThreadAnalysisContext(messages, memory);
   if (!ctx.hasInsight) return partial;
 

@@ -5,10 +5,12 @@ import {
   useCallback,
   useContext,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 
+import type { EvidenceHighlight } from "@/components/dashboard/ask-aria/ask-aria-evidence";
 import type { DateRange, MetricId, PlatformId } from "@/types/analytics";
 
 import {
@@ -73,10 +75,13 @@ export interface DashboardContextValue {
   setPlatformTableSort: (sort: DashboardSortState) => void;
   productSearch: string;
   setProductSearch: (value: string) => void;
+  /** "Show on dashboard" from an Aria answer: what to highlight. */
+  evidence: EvidenceHighlight | null;
+  showEvidence: (evidence: EvidenceHighlight) => void;
   applyDatePreset: (preset: DateRangePreset) => void;
 }
 
-const DEFAULT_KPI_METRICS: MetricId[] = [
+export const DEFAULT_KPI_METRICS: MetricId[] = [
   "gross_sales",
   "orders",
   "conversion_rate",
@@ -129,7 +134,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     direction: "desc",
   });
   const [platformTableSort, setPlatformTableSort] = useState<DashboardSortState>({
-    field: "revenue",
+    field: "grossSales",
     direction: "desc",
   });
   const [productSearch, setProductSearch] = useState("");
@@ -219,6 +224,31 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     setConsolidatedSelectedPlatformIdsState(getRegistryPlatformIds());
   }, []);
 
+  const [evidence, setEvidence] = useState<EvidenceHighlight | null>(null);
+  const evidenceTimer = useRef<number | null>(null);
+
+  // Switch to the consolidated view with the answer's metric, highlight its
+  // platform, scroll to the chart, and fade the highlight after 8 seconds.
+  const showEvidence = useCallback(
+    (next: EvidenceHighlight) => {
+      setPlatform("all");
+      if (next.metricId) {
+        setConsolidatedChartMetric(next.metricId);
+        addSelectedMetric(next.metricId);
+      }
+      setEvidence(next);
+      if (evidenceTimer.current) window.clearTimeout(evidenceTimer.current);
+      evidenceTimer.current = window.setTimeout(() => setEvidence(null), 8000);
+      window.requestAnimationFrame(() => {
+        const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+        document
+          .getElementById("metric-trends")
+          ?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+      });
+    },
+    [addSelectedMetric],
+  );
+
   const value = useMemo(
     () => ({
       analyticsMode,
@@ -262,6 +292,8 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
       productSearch,
       setProductSearch,
       applyDatePreset,
+      evidence,
+      showEvidence,
     }),
     [
       analyticsMode,
@@ -290,6 +322,8 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
       platformTableSort,
       productSearch,
       applyDatePreset,
+      evidence,
+      showEvidence,
     ],
   );
 

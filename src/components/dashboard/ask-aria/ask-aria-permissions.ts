@@ -27,6 +27,10 @@ const ANALYST_ALLOWED = new Set<AskAriaActionType>([
   "draft_email",
   "send_email",
   "investigate_anomaly",
+  "share_slack",
+  "calendar_invite",
+  "create_task",
+  "weekly_digest",
 ]);
 
 const KAM_ALLOWED = new Set<AskAriaActionType>([
@@ -39,6 +43,10 @@ const KAM_ALLOWED = new Set<AskAriaActionType>([
   "draft_email",
   "send_email",
   "investigate_anomaly",
+  "share_slack",
+  "calendar_invite",
+  "create_task",
+  "weekly_digest",
 ]);
 
 export function canConfirmAction(

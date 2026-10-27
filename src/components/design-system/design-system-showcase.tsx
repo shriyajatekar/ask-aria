@@ -29,6 +29,19 @@ import {
   Label,
 } from "@/components/ui";
 
+const COLOUR_SWATCHES = [
+  { label: "Text primary", use: "Headings, numbers", hex: "#151515", ratio: "16.6:1", className: "bg-text-primary" },
+  { label: "Text secondary", use: "Supporting copy", hex: "#4A4A47", ratio: "8.1:1", className: "bg-text-secondary" },
+  { label: "Text tertiary", use: "Labels, metadata", hex: "#5F5F5B", ratio: "5.8:1", className: "bg-text-tertiary" },
+  { label: "Copper", use: "Actions, selection, focus", hex: "#8A5A2B", ratio: "5.3:1", className: "bg-accent-interactive" },
+  { label: "Copper tint", use: "Selected backgrounds", hex: "#EFE6DC", ratio: "copper on it 4.8:1", className: "bg-accent-subtle" },
+  { label: "Red", use: "Drops and risks only", hex: "#B42318", ratio: "6.0:1", className: "bg-error" },
+  { label: "Ochre", use: "Warnings", hex: "#8A5A00", ratio: "5.4:1", className: "bg-warning" },
+  { label: "Page", use: "Canvas", hex: "#F4F4F2", ratio: "—", className: "bg-background" },
+];
+
+const CHART_SWATCHES = ["#8A5A2B", "#3D3D3B", "#B0603F", "#93650F", "#7A7873", "#A3804F"];
+
 function Section({
   title,
   description,
@@ -174,6 +187,49 @@ export function DesignSystemShowcase() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+      </Section>
+
+      <Section
+        title="Colour: graphite and copper"
+        description="Neutral graphite carries the data; copper marks what you can act on. Red is reserved for drops. No green, blue or purple: an increase is shown in ink with an ↑ arrow. Ratios are against the page background; every text colour meets WCAG AA (4.5:1)."
+      >
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {COLOUR_SWATCHES.map((swatch) => (
+            <div key={swatch.label} className="overflow-hidden rounded-lg border border-border bg-surface">
+              <div className={`h-14 ${swatch.className}`} />
+              <div className="space-y-0.5 p-3">
+                <p className="type-label text-text-primary">{swatch.label}</p>
+                <p className="type-small">{swatch.use}</p>
+                <p className="type-small tabular-nums text-text-tertiary">
+                  {swatch.hex} · {swatch.ratio}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      <Section
+        title="Chart palette"
+        description="Six warm and neutral colours, all at least 3:1 against white for graphics. Platform bars share one neutral; the bar you hover turns copper."
+      >
+        <div className="flex flex-wrap gap-3">
+          {CHART_SWATCHES.map((hex) => (
+            <div key={hex} className="flex items-center gap-2">
+              <span className="h-6 w-6 rounded-sm" style={{ backgroundColor: hex }} aria-hidden />
+              <span className="type-small tabular-nums">{hex}</span>
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      <Section
+        title="Motion"
+        description="New answers fade and rise 6px in 200 ms; the chat panel slides in over 280 ms; buttons press to 98%. All of it turns off when the system asks for reduced motion."
+      >
+        <div className="motion-safe:animate-enter rounded-lg border border-border bg-surface p-4">
+          <p className="type-body">Example answer card entering.</p>
+        </div>
       </Section>
 
       <Section

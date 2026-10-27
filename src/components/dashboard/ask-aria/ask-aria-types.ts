@@ -27,6 +27,8 @@ export type AskAriaActionType =
   | "send_email"
   | "create_task"
   | "share_slack"
+  | "calendar_invite"
+  | "weekly_digest"
   | "investigate_anomaly";
 
 export type AskAriaActionStatus =
@@ -50,6 +52,12 @@ export interface AskAriaActionDraft {
   campaignName?: string;
   currentBid?: number;
   newBid?: number;
+  /** Trend check on bid changes, shown before the user confirms. */
+  bidRisk?: {
+    level: "high" | "medium" | "none";
+    reasons: string[];
+    suggestion: string | null;
+  };
   currentBudget?: number;
   newBudget?: number;
   budgetChangePercent?: number;
@@ -63,6 +71,8 @@ export interface AskAriaActionDraft {
   reportTitle?: string;
   reportPeriodLabel?: string;
   reportPlatformScope?: string;
+  /** Set when the report is a root-cause analysis export. */
+  reportRcaMetric?: "gross_sales" | "roas";
   keywordsPausedCount?: number;
   categoryLabel?: string;
   reallocateAmount?: number;
@@ -75,6 +85,20 @@ export interface AskAriaActionDraft {
   emailArtifactUrl?: string;
   emailArtifactKind?: "doc" | "sheet";
   emailPreviewLines?: string[];
+  /**
+   * Team actions (Slack/Teams post, calendar invite, Jira/Asana task, weekly
+   * digest). Always simulated: no live integration exists for these.
+   */
+  collab?: {
+    /** "Slack", "Microsoft Teams", "Google Calendar", "Jira", "Asana", "Email digest" */
+    tool: string;
+    /** Channel, attendees, assignee or recipients. */
+    target: string;
+    title: string;
+    /** When it happens: meeting time, due date or digest schedule. */
+    when?: string;
+    bodyLines: string[];
+  };
   gmailMessageId?: string;
   spreadsheetTitle?: string;
   spreadsheetRowCount?: number;
@@ -107,6 +131,35 @@ export interface AskAriaInsightSection {
   lines: string[];
 }
 
+/** One driver in a root-cause waterfall. */
+export interface AskAriaRcaDriverRow {
+  label: string;
+  from: string;
+  to: string;
+  changePct: string;
+  /** Formatted signed contribution in the metric's units, e.g. "-0.32" or "-₹1.6L". */
+  contribution: string;
+  /** Share of the push in the metric's direction (0–100); negative = offset. */
+  sharePct: number;
+  role: "cause" | "offset" | "minor";
+}
+
+/** A platform or product's share of the change. */
+export interface AskAriaRcaShareRow {
+  label: string;
+  sharePct: number;
+}
+
+/** Where an answer's numbers come from — shown on every analysis answer. */
+export interface AskAriaAnswerSource {
+  dataset: string;
+  scope: string;
+  period: string;
+  comparison: string;
+  /** Set when some platforms in scope haven't reported every day of the period. */
+  partial?: string;
+}
+
 export interface AskAriaMetricLine {
   label: string;
   value: string;
@@ -129,6 +182,9 @@ export type AskAriaMessage =
       sections: AskAriaInsightSection[];
       metrics?: AskAriaMetricLine[];
       handoffs?: AskAriaHandoff[];
+      /** Shown above the answer when the question's premise is wrong or the signal is weak. */
+      caveat?: string;
+      source?: AskAriaAnswerSource;
       createdAt: number;
     }
   | {
@@ -142,6 +198,7 @@ export type AskAriaMessage =
       expectedConsideration?: string;
       nextAction?: string;
       handoffs?: AskAriaHandoff[];
+      source?: AskAriaAnswerSource;
       createdAt: number;
     }
   | {
@@ -192,6 +249,99 @@ export type AskAriaMessage =
     }
   | {
       id: string;
+      /** Summary of answer feedback and questions Aria couldn't answer. */
+      kind: "feedback_log";
+      summary: string;
+      reasons: Array<{ reason: string; count: number }>;
+      unanswered: string[];
+      createdAt: number;
+    }
+  | {
+      id: string;
+      /** "Did it work?" — before/after checks on confirmed actions. */
+      kind: "outcome";
+      title: string;
+      summary: string;
+      items: Array<{
+        id: string;
+        label: string;
+        example: boolean;
+        verdict: "too_early" | "improved" | "worse" | "no_clear_change";
+        verdictLabel: string;
+        detail: string;
+      }>;
+      /** Always shown: before/after is not proof of cause. */
+      caveat: string;
+      createdAt: number;
+    }
+  | {
+      id: string;
+      /**
+       * One-click deep dive: what happened → why (driver tree) → where →
+       * has it happened before → what to do, in one card.
+       */
+      kind: "deep_dive";
+      title: string;
+      summary: string;
+      metricLabel: string;
+      scopeLabel: string;
+      metrics: AskAriaMetricLine[];
+      /** The root-cause analysis behind step 2 and 3. */
+      rca: Extract<AskAriaMessage, { kind: "rca" }>;
+      pastLine: string;
+      hasPrecedent: boolean;
+      suggestion: string;
+      caveat?: string;
+      source?: AskAriaAnswerSource;
+      /** Up to three next actions (report, task, share). */
+      actions: AskAriaHandoff[];
+      createdAt: number;
+    }
+  | {
+      id: string;
+      kind: "situation";
+      /** "Amazon Gross Sales down 22.0%" */
+      title: string;
+      summary: string;
+      /** What happened the last time, or that there's no precedent. */
+      pastLine: string;
+      hasPrecedent: boolean;
+      suggestion: string;
+      severity: "high" | "medium";
+      scopeLabel: string;
+      /** Titles of the next most urgent situations. */
+      alsoWatching: string[];
+      source?: AskAriaAnswerSource;
+      handoffs?: AskAriaHandoff[];
+      createdAt: number;
+    }
+  | {
+      id: string;
+      kind: "rca";
+      title: string;
+      /** Lead sentence: the top cause and how much it explains. */
+      summary: string;
+      rcaMetric: "gross_sales" | "roas";
+      metricLabel: string;
+      scopeLabel: string;
+      /** e.g. "ROAS 3.49 → 3.08 (-11.6%)" */
+      totalLine: string;
+      /** e.g. "ROAS = Ad sales per click ÷ Cost per click" */
+      formula: string;
+      drivers: AskAriaRcaDriverRow[];
+      platforms: AskAriaRcaShareRow[];
+      products: AskAriaRcaShareRow[];
+      ruledOut: string[];
+      otherSignals: string[];
+      confidence: "high" | "medium" | "low";
+      confidenceReason: string;
+      caveat?: string;
+      source?: AskAriaAnswerSource;
+      handoffs?: AskAriaHandoff[];
+      createdAt: number;
+    }
+  | {
+      id: string;
       kind: "workspace_artifact";
       title: string;
       artifactKind: "doc" | "sheet";
@@ -234,6 +384,7 @@ export type AskAriaTemporalWindow =
   | "last_7_days"
   | "last_30_days"
   | "previous_week"
+  | "weekend"
   | "decline_onset";
 
 /** Latest metric/platform/period investigation — inherited on follow-ups in the same thread. */
@@ -261,6 +412,9 @@ export interface AskAriaInvestigationMemory {
   lastPlatform?: DashboardPlatform;
   lastTopic?: string;
   temporalWindow?: AskAriaTemporalWindow;
+  /** Brand the last answer pointed at, so "why?" can explain it. */
+  lastBrandId?: string;
+  lastBrandName?: string;
   pendingActionDraft?: AskAriaActionDraft;
   activeAnalysisContext?: AskAriaActiveAnalysisContext;
 }

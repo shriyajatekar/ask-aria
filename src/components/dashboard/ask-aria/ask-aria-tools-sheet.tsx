@@ -56,16 +56,23 @@ export function AskAriaToolsSheet() {
   const [detail, setDetail] = useState<DemoWorkspaceTool | null>(null);
   const [connectedTick, setConnectedTick] = useState(0);
 
+  // Reset the detail view whenever the sheet opens, closes or is focused on a
+  // tool (adjusting state during render instead of in an effect).
+  const [lastSheetState, setLastSheetState] = useState({
+    open: toolsSheetOpen,
+    focus: toolsSheetFocus,
+  });
+  if (
+    lastSheetState.open !== toolsSheetOpen ||
+    lastSheetState.focus !== toolsSheetFocus
+  ) {
+    setLastSheetState({ open: toolsSheetOpen, focus: toolsSheetFocus });
+    setDetail(toolsSheetOpen ? (toolsSheetFocus ?? null) : null);
+  }
+
   useEffect(() => {
-    if (!toolsSheetOpen) {
-      setDetail(null);
-      return;
-    }
-    void refreshGoogleWorkspaceStatus();
-    if (toolsSheetFocus) {
-      setDetail(toolsSheetFocus);
-    }
-  }, [toolsSheetOpen, toolsSheetFocus, refreshGoogleWorkspaceStatus]);
+    if (toolsSheetOpen) void refreshGoogleWorkspaceStatus();
+  }, [toolsSheetOpen, refreshGoogleWorkspaceStatus]);
 
   const googleConnected = isGoogleWorkspaceEffectivelyConnected(
     googleOAuthConnected,

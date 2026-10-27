@@ -1,18 +1,16 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import {
   ChevronDown,
   PanelLeftClose,
   PanelLeftOpen,
-  Settings,
 } from "lucide-react";
 
 import { useAuth } from "@/contexts/auth-provider";
 import { useDashboard } from "@/contexts/dashboard-context";
 import { getRoleLabel } from "@/lib/auth/role-utils";
-import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,26 +31,42 @@ const SIDEBAR_COLLAPSED_KEY = "ci-sidebar-collapsed";
 const SIDEBAR_WIDTH_EXPANDED = 252;
 const SIDEBAR_WIDTH_COLLAPSED = 68;
 
+const SIDEBAR_EVENT = "ci-sidebar-change";
+
+function subscribeSidebar(onChange: () => void) {
+  window.addEventListener(SIDEBAR_EVENT, onChange);
+  return () => window.removeEventListener(SIDEBAR_EVENT, onChange);
+}
+
+function readSidebarCollapsed(): boolean {
+  try {
+    return window.sessionStorage.getItem(SIDEBAR_COLLAPSED_KEY) !== "false";
+  } catch {
+    return true;
+  }
+}
+
 export function DashboardAppShell({ children }: { children: ReactNode }) {
   const { user, signOut } = useAuth();
   const { platform, setPlatform } = useDashboard();
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
-
-  useEffect(() => {
-    const stored = window.sessionStorage.getItem(SIDEBAR_COLLAPSED_KEY);
-    if (stored === "false") {
-      setSidebarCollapsed(false);
-    } else if (stored === "true") {
-      setSidebarCollapsed(true);
-    }
-  }, []);
+  // Sidebar preference lives in sessionStorage; read it as an external store
+  // so the server render (collapsed) and the browser agree without an effect.
+  const sidebarCollapsed = useSyncExternalStore(
+    subscribeSidebar,
+    () => readSidebarCollapsed(),
+    () => true,
+  );
 
   function toggleSidebar() {
-    setSidebarCollapsed((current) => {
-      const next = !current;
-      window.sessionStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(next));
-      return next;
-    });
+    try {
+      window.sessionStorage.setItem(
+        SIDEBAR_COLLAPSED_KEY,
+        String(!sidebarCollapsed),
+      );
+    } catch {
+      // Storage blocked: the toggle won't persist, which is fine.
+    }
+    window.dispatchEvent(new Event(SIDEBAR_EVENT));
   }
 
   const sidebarWidth = sidebarCollapsed
@@ -66,15 +80,23 @@ export function DashboardAppShell({ children }: { children: ReactNode }) {
           <div className="flex h-14 items-center gap-2 px-4 lg:gap-4 lg:px-6">
             <DashboardMobileNavDrawer />
             <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1.5 gap-y-0 sm:items-center sm:gap-3">
-              <div className="min-w-0">
-                <span className="type-body-medium whitespace-nowrap text-text-primary">
+              {/* Page heading. On phones the label stacks under the name
+                  instead of wrapping over three lines. */}
+              <h1 className="flex min-w-0 flex-col leading-tight sm:block">
+                <span className="type-body-medium truncate whitespace-nowrap text-text-primary">
                   Commerce Intelligence
                 </span>
-                <span className="type-small text-text-tertiary">
-                  {" "}
-                  · CONCEPTUAL CASE STUDY
+                <span className="type-small whitespace-nowrap text-text-tertiary max-sm:text-[11px]">
+                  <span className="hidden sm:inline"> · </span>
+                  CONCEPTUAL CASE STUDY
                 </span>
-              </div>
+                {user ? (
+                  <span className="sr-only">
+                    {" "}
+                    — {getRoleLabel(user.role)} dashboard
+                  </span>
+                ) : null}
+              </h1>
               <span className="hidden h-4 w-px bg-border md:block" />
               {user ? (
                 <span className="hidden type-small text-text-secondary md:inline">
@@ -91,13 +113,8 @@ export function DashboardAppShell({ children }: { children: ReactNode }) {
               )}
             </div>
 
-            <div className="flex-1" />
-
             <div className="flex items-center gap-1">
               <DashboardNotificationCenter />
-              <Button variant="tertiary" size="icon" aria-label="Settings">
-                <Settings className="h-4 w-4" />
-              </Button>
               {user ? (
                 <UserProfileMenu
                   name={user.name}

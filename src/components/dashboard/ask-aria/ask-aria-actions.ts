@@ -34,6 +34,7 @@ import {
   parseMonitorAction,
   tryRefineMonitorDraft,
 } from "./ask-aria-monitor-draft";
+import { collabResult, detectCollabAction, isCollabAction } from "./ask-aria-collab-actions";
 import { createMessageId } from "./ask-aria-storage";
 import { destinationForAction } from "./ask-aria-tool-mapping";
 
@@ -118,6 +119,10 @@ function parseNumericBid(text: string): number | undefined {
   const targetBid = text.match(/target\s+bid\s+(?:is|to)\s+₹?\s*(\d+(?:\.\d+)?)/i);
   if (targetBid) return Number(targetBid[1]);
 
+  // "Increase bid on Amazon campaign Hydra Glow to 25"
+  const bidThenTo = text.match(/\bbid\b.*?\bto\s+₹?\s*(\d+(?:\.\d+)?)\s*$/i);
+  if (bidThenTo) return Number(bidThenTo[1]);
+
   return undefined;
 }
 
@@ -165,6 +170,11 @@ export function isClientUpdateRequest(text: string): boolean {
   );
 }
 
+/** "Email this to my team", "mail it to leadership" — email used as a verb. */
+function isEmailVerbRequest(text: string): boolean {
+  return /^\s*(e-?mail|mail|share)\s+(this|it|that|the\b)/i.test(text);
+}
+
 export function looksLikeActionSpecification(text: string): boolean {
   const lower = text.toLowerCase();
   return (
@@ -182,6 +192,8 @@ export function looksLikeActionSpecification(text: string): boolean {
         lower.includes("kam") ||
         lower.includes("team"))) ||
     (lower.includes("draft") && lower.includes("email")) ||
+    isEmailVerbRequest(text) ||
+    detectCollabAction(text) !== null ||
     isClientUpdateRequest(text) ||
     lower.includes("confirm send") ||
     /\bset\s+.+\s+bid\b/i.test(text)
@@ -217,14 +229,11 @@ function insightSummaryForClientUpdate(
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const message = messages[i];
     if (message.kind === "insight") {
-      const direction = ctx?.metricDirection;
-      const directionPhrase =
-        direction === "down"
-          ? "declined"
-          : direction === "up"
-            ? "improved"
-            : "shifted";
-      return `${metricLabel} ${directionPhrase} versus the comparison period on ${scopeLabel}. ${message.summary}`;
+      // Answers already lead with the finding; prefix the brand when the
+      // thread was about one, so the client email names their account.
+      return memory.lastBrandName
+        ? `${memory.lastBrandName}: ${message.summary}`
+        : message.summary;
     }
     if (message.kind === "recommendation") {
       return `${metricLabel} on ${scopeLabel}: ${message.observation}`;
@@ -283,9 +292,12 @@ export function enrichClientUpdateDraft(
     ? insightSummaryForClientUpdate(options.messages, options.memory)
     : undefined;
 
+  const brandName = options?.memory?.lastBrandName;
   const emailSubject =
     partial.emailSubject?.trim() ||
-    defaultClientUpdateSubject(contextForEmail);
+    (brandName
+      ? `Performance update — ${brandName}`
+      : defaultClientUpdateSubject(contextForEmail));
   const emailPreviewLines = buildClientUpdateBodyLines({
     subject: emailSubject,
     recipientLabel: partial.emailRecipients ?? group?.label,
@@ -332,17 +344,24 @@ export function parseActionRequest(
     return { kind: "none" };
   }
 
+  // Team actions (Slack/Teams, calendar, Jira/Asana, weekly digest).
+  const collabType = detectCollabAction(text);
+  if (collabType) {
+    return { kind: "ready", partial: { type: collabType } };
+  }
+
   const isSpreadsheet =
     lower.includes("spreadsheet") ||
     (lower.includes("declining") && lower.includes("product")) ||
     (lower.includes("underperform") && lower.includes("product"));
   const isEmailAction =
-    (lower.includes("send") || lower.includes("draft")) &&
-    (lower.includes("email") ||
-      lower.includes("kam") ||
-      lower.includes("team") ||
-      lower.includes("leadership") ||
-      /@/.test(text));
+    isEmailVerbRequest(text) ||
+    ((lower.includes("send") || lower.includes("draft")) &&
+      (lower.includes("email") ||
+        lower.includes("kam") ||
+        lower.includes("team") ||
+        lower.includes("leadership") ||
+        /@/.test(text)));
   const isConfirmSend =
     lower.includes("confirm send") ||
     lower.includes("send the prepared email") ||
@@ -740,6 +759,8 @@ export function buildActionDraft(
     reportTitle: partial.reportTitle,
     reportPeriodLabel: partial.reportPeriodLabel,
     reportPlatformScope: partial.reportPlatformScope,
+    reportRcaMetric: partial.reportRcaMetric,
+    collab: partial.collab,
     keywordsPausedCount: partial.keywordsPausedCount,
     categoryLabel: partial.categoryLabel,
     reallocateAmount: partial.reallocateAmount,
@@ -850,6 +871,7 @@ export function validateActionDraft(draft: AskAriaActionDraft): string | null {
 }
 
 export function actionPreviewTitle(draft: AskAriaActionDraft): string {
+  if (draft.collab) return draft.collab.title;
   switch (draft.type) {
     case "campaign_bid":
     case "schedule_bid_change":
@@ -895,6 +917,20 @@ export function actionPreviewRows(
   const platform = draft.platformId
     ? PLATFORM_BY_ID[draft.platformId]?.name ?? "—"
     : "—";
+
+  if (draft.collab) {
+    const targetLabel: Record<string, string> = {
+      share_slack: "Channel",
+      calendar_invite: "Attendees",
+      create_task: "Assignee",
+      weekly_digest: "Recipients",
+    };
+    return [
+      { label: "Tool", value: `${draft.collab.tool} (simulated)` },
+      { label: targetLabel[draft.type] ?? "To", value: draft.collab.target },
+      ...(draft.collab.when ? [{ label: "When", value: draft.collab.when }] : []),
+    ];
+  }
 
   if (draft.type === "generate_report" || draft.type === "schedule_report") {
     return [
@@ -1030,7 +1066,7 @@ export function actionConfirmedMessage(draft: AskAriaActionDraft): string {
     return `${ARIA_STATUS_LABEL.preparing} report.`;
   }
   if (draft.type === "send_email") {
-    return `Ready to send this. ${ARIA_STATUS_LABEL.executing} via Gmail…`;
+    return `Confirmed. ${ARIA_STATUS_LABEL.executing}…`;
   }
   if (draft.type === "create_spreadsheet") {
     return "Ready to create this.";
@@ -1108,6 +1144,19 @@ export function mockExecuteAction(draft: AskAriaActionDraft): AskAriaMessage {
     : undefined;
   const target = draft.campaignName ?? draft.productName ?? "Target";
 
+  if (isCollabAction(draft.type)) {
+    const result = collabResult(draft);
+    return {
+      id: createMessageId(),
+      kind: "action_result",
+      draft,
+      status: "completed",
+      message: result.message,
+      detailLines: result.detailLines,
+      createdAt: Date.now(),
+    };
+  }
+
   if (draft.type === "generate_report" || draft.type === "schedule_report") {
     const title = draft.reportTitle ?? "Commerce analysis report";
     return {
@@ -1117,7 +1166,7 @@ export function mockExecuteAction(draft: AskAriaActionDraft): AskAriaMessage {
       status: "completed",
       message: "Report generated (demo)",
       detailLines: [
-        `${title} is ready in ${draft.workspaceDestination ?? "Google Docs"} (simulated — connect Google OAuth for a real Doc).`,
+        `${title} would be created in ${draft.workspaceDestination ?? "Google Docs"}. Demo only: no real document was created.`,
       ],
       ctaLabel: "Open report",
       secondaryCtaLabel: "Share",
@@ -1136,7 +1185,7 @@ export function mockExecuteAction(draft: AskAriaActionDraft): AskAriaMessage {
       status: "completed",
       message: "Spreadsheet created (demo)",
       detailLines: [
-        `${rows} rows would export to ${draft.workspaceDestination ?? "Google Sheets"} (simulated — connect Google Sheets OAuth for a real file).`,
+        `${rows} rows would export to ${draft.workspaceDestination ?? "Google Sheets"}. Demo only: no real file was created.`,
       ],
       ctaLabel: "Open spreadsheet",
       secondaryCtaDisabled: true,
@@ -1153,7 +1202,7 @@ export function mockExecuteAction(draft: AskAriaActionDraft): AskAriaMessage {
       status: "completed",
       message: "Email draft ready for review",
       detailLines: [
-        "Nothing was sent — confirm when you're ready to deliver via Gmail.",
+        "Nothing was sent. Review it, then confirm to send.",
       ],
       createdAt: Date.now(),
     };
@@ -1165,10 +1214,10 @@ export function mockExecuteAction(draft: AskAriaActionDraft): AskAriaMessage {
       kind: "action_result",
       draft,
       status: "completed",
-      message: `Email sent to ${draft.emailRecipients ?? "recipients"}.`,
+      message: `Simulated email to ${draft.emailRecipients ?? "recipients"}`,
       detailLines: [
         `Subject: ${draft.emailSubject ?? "—"}`,
-        "Delivery simulated for this demo workspace.",
+        "Demo only: nothing was actually sent.",
       ],
       createdAt: Date.now(),
     };
@@ -1472,7 +1521,7 @@ export function tryRefineEmailDraft(
     return null;
   }
   const lower = text.toLowerCase();
-  let partial: Partial<AskAriaActionDraft> = { ...draft };
+  const partial: Partial<AskAriaActionDraft> = { ...draft };
   let changed = false;
 
   const explicit = parseExplicitEmailAddresses(text);
@@ -1576,7 +1625,7 @@ export function tryRefineSpreadsheetDraft(
   if (!isSpreadsheetRefinementPhrase(text)) return null;
 
   const lower = text.toLowerCase().trim();
-  let partial: Partial<AskAriaActionDraft> = { ...draft };
+  const partial: Partial<AskAriaActionDraft> = { ...draft };
   let changed = false;
 
   const platformId = resolvePlatform(text);

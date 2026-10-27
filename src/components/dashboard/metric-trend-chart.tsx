@@ -21,7 +21,8 @@ import {
 import {
   chartPeriodPair,
   METRIC_COMPARISON_BASE,
-  metricChartColor,
+  CHART_ACCENT,
+  metricSeriesColor,
   platformChartColor,
 } from "@/lib/dashboard/chart-colors";
 import { normalizeSelectedPlatformIds } from "@/lib/dashboard/consolidated-platforms";
@@ -168,9 +169,9 @@ function useIndividualSummarySeries(chartMetrics: MetricId[]) {
         ? aggregateMetricSeriesWeekly
         : aggregateMetricSeriesByDate;
 
-    return chartMetrics.map((metricId) => ({
+    return chartMetrics.map((metricId, index) => ({
       metricId,
-      color: metricChartColor(metricId),
+      color: metricSeriesColor(index),
       points: aggregate(currentRecords, metricId),
     }));
   }, [chartMetrics, currentRecords, dashboard.chartGranularity]);
@@ -315,7 +316,7 @@ function SummaryLineTrendSection({
                     x={padding.left - 8}
                     y={panelTop + innerPanelHeight / 2 + 4}
                     textAnchor="end"
-                    className="fill-[#404040] text-[10px]"
+                    className="fill-text-primary text-[10px]"
                   >
                     {METRIC_BY_ID[series.metricId]?.name ?? series.metricId}
                   </text>
@@ -324,7 +325,7 @@ function SummaryLineTrendSection({
                     x2={width - padding.right}
                     y1={panelBottom}
                     y2={panelBottom}
-                    stroke="#F0F0F0"
+                    stroke="var(--color-border-subtle)"
                   />
                   <path
                     d={path}
@@ -337,7 +338,7 @@ function SummaryLineTrendSection({
                       cx={xForIndex(hoveredIndex)}
                       cy={yForValue(series.points[hoveredIndex].value)}
                       r={3.5}
-                      fill="#FFFFFF"
+                      fill="var(--color-surface)"
                       stroke={series.color}
                       strokeWidth={2}
                     />
@@ -369,7 +370,7 @@ function SummaryLineTrendSection({
                 x={xForIndex(index)}
                 y={height - 10}
                 textAnchor="middle"
-                className="fill-[#737373] text-[10px]"
+                className="fill-text-tertiary text-[10px]"
               >
                 {new Date(`${dates[index]}T00:00:00.000Z`).toLocaleDateString(
                   "en-IN",
@@ -479,7 +480,7 @@ function ComparisonTrendSection({
               x2={width - padding.right}
               y1={baseline}
               y2={baseline}
-              stroke="#E5E5E5"
+              stroke="var(--color-border)"
             />
 
             {rows.map((row, index) => {
@@ -491,7 +492,7 @@ function ComparisonTrendSection({
                 (row.comparison / maxValue) * (innerHeight - 12);
               const currentX = groupCenter - barWidth - barGap / 2;
               const comparisonX = groupCenter + barGap / 2;
-              const periodColors = chartPeriodPair(metricChartColor(row.metricId));
+              const periodColors = chartPeriodPair(metricSeriesColor(index));
 
               return (
                 <g key={row.metricId}>
@@ -527,7 +528,7 @@ function ComparisonTrendSection({
                     x={groupCenter}
                     y={baseline + 16}
                     textAnchor="middle"
-                    className="fill-[#525252] text-[10px]"
+                    className="fill-text-secondary text-[10px]"
                   >
                     {METRIC_BY_ID[row.metricId]?.name ?? row.metricId}
                   </text>
@@ -539,7 +540,7 @@ function ComparisonTrendSection({
               x={padding.left + innerWidth / 2}
               y={height - 6}
               textAnchor="middle"
-              className="fill-[#737373] text-[9px]"
+              className="fill-text-tertiary text-[9px]"
             >
               Current vs comparison period
             </text>
@@ -790,6 +791,7 @@ function useConsolidatedPlatformMetricRows() {
 export function ConsolidatedPlatformChart() {
   const { rows, metricId, metricName, isComparison } =
     useConsolidatedPlatformMetricRows();
+  const { evidence } = useDashboard();
   const containerRef = useRef<HTMLDivElement>(null);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(
@@ -853,7 +855,7 @@ export function ConsolidatedPlatformChart() {
               x2={width - padding.right}
               y1={baseline}
               y2={baseline}
-              stroke="#E5E5E5"
+              stroke="var(--color-border)"
             />
 
             {rows.map((row, index) => {
@@ -864,7 +866,11 @@ export function ConsolidatedPlatformChart() {
               const platformName =
                 PLATFORM_BY_ID[row.platformId]?.name ?? row.platformId;
 
-              const platformColor = platformChartColor(row.platformId);
+              // Neutral bars; the hovered platform turns copper.
+              const platformColor =
+                hoveredIndex === index || evidence?.platformId === row.platformId
+                  ? CHART_ACCENT
+                  : platformChartColor(row.platformId);
 
               if (!isComparison) {
                 const barX = groupCenter - barWidth / 2;
@@ -888,7 +894,7 @@ export function ConsolidatedPlatformChart() {
                       x={groupCenter}
                       y={baseline + 14}
                       textAnchor="middle"
-                      className="fill-[#525252] text-[9px]"
+                      className="fill-text-secondary text-[9px]"
                     >
                       {platformName.length > 14
                         ? `${platformName.slice(0, 12)}…`
@@ -938,7 +944,7 @@ export function ConsolidatedPlatformChart() {
                     x={groupCenter}
                     y={baseline + 14}
                     textAnchor="middle"
-                    className="fill-[#525252] text-[9px]"
+                    className="fill-text-secondary text-[9px]"
                   >
                     {platformName.length > 14
                       ? `${platformName.slice(0, 12)}…`

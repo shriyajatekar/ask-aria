@@ -136,6 +136,7 @@ export async function createReportViaApi(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       title: draft.reportTitle ?? "Commerce analysis report",
+      rcaMetric: draft.reportRcaMetric,
       reportPeriodLabel: draft.reportPeriodLabel,
       platformId: draft.platformId ?? context.platformId ?? "all",
       dateRange: context.dateRange,

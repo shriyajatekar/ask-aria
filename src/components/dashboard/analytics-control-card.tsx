@@ -5,7 +5,11 @@ import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 
 import { useDashboard } from "@/contexts/dashboard-context";
-import { PERFORMANCE_DATE_RANGE } from "@/data/scenarios";
+import {
+  COMPLETE_THROUGH,
+  PERFORMANCE_DATE_RANGE,
+  PLATFORM_DATA_THROUGH,
+} from "@/data/scenarios";
 import { BRANDS } from "@/data/brands";
 import { PRODUCTS } from "@/data/products";
 import { PLATFORMS } from "@/data/platforms";
@@ -115,7 +119,46 @@ export function AnalyticsControlCard() {
       <p className="mt-2 min-w-0 truncate type-small text-text-secondary">
         {filterSummary}
       </p>
+      <DataFreshness />
     </section>
+  );
+}
+
+function formatShortDate(iso: string): string {
+  return new Date(`${iso}T00:00:00.000Z`).toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+  });
+}
+
+/**
+ * Platforms report on different delays. Shows each one's "data through"
+ * date and why the default period ends where it does.
+ */
+function DataFreshness() {
+  const groups = new Map<string, string[]>();
+  for (const platform of PLATFORMS) {
+    const through = PLATFORM_DATA_THROUGH[platform.id];
+    groups.set(through, [...(groups.get(through) ?? []), platform.name]);
+  }
+  const ordered = [...groups.entries()].sort(([a], [b]) => b.localeCompare(a));
+  return (
+    <details className="mt-1.5 type-small text-text-tertiary">
+      <summary className="cursor-pointer select-none rounded-sm hover:text-text-secondary">
+        Data complete through {formatShortDate(COMPLETE_THROUGH)}; some platforms report later
+      </summary>
+      <ul className="mt-1 space-y-0.5 pl-4">
+        {ordered.map(([date, names]) => (
+          <li key={date}>
+            <span className="tabular-nums text-text-secondary">{formatShortDate(date)}</span>: {names.join(", ")}
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1 pl-4">
+        Default periods end on the last day every platform has reported, so totals never mix in missing days.
+        Reporting delays here are illustrative.
+      </p>
+    </details>
   );
 }
 

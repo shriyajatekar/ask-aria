@@ -9,7 +9,10 @@ import {
   looksLikeActionSpecification,
   parseActionRequest,
 } from "./ask-aria-actions";
-import { isPlatformScopeRequest } from "./ask-aria-scope";
+import {
+  extractPlatformIdsFromText,
+  isPlatformScopeRequest,
+} from "./ask-aria-scope";
 
 export { isClientUpdateRequest } from "./ask-aria-actions";
 
@@ -19,6 +22,7 @@ export type AskAriaIntent =
   | "action_clarification"
   | "temporal_follow_up"
   | "product_analysis"
+  | "product_ranking"
   | "brand_analysis"
   | "platform_analysis"
   | "platform_summary"
@@ -28,7 +32,15 @@ export type AskAriaIntent =
   | "executive_summary"
   | "historical_pattern"
   | "client_update"
-  | "general_performance";
+  | "general_performance"
+  | "greeting"
+  | "metric_definition"
+  | "unknown"
+  | "root_cause_analysis"
+  | "situation_alerts"
+  | "deep_dive"
+  | "outcome_check"
+  | "feedback_log";
 
 export function isConfirmPhrase(text: string): boolean {
   const lower = text.toLowerCase().trim();
@@ -197,6 +209,11 @@ function isBrandQuery(text: string): boolean {
   );
 }
 
+/** "Which platform is growing fastest?", "Where is growth coming from?" */
+export function isGrowthQuestion(text: string): boolean {
+  return /\b(grow|growing|growth|grew|fastest)\b/i.test(text);
+}
+
 function isPlatformComparisonQuery(text: string): boolean {
   const lower = text.toLowerCase();
   if (
@@ -208,7 +225,7 @@ function isPlatformComparisonQuery(text: string): boolean {
   ) {
     return true;
   }
-  if (lower.includes("which platform") && lower.includes("growing")) {
+  if (isGrowthQuestion(text) && /\b(platform|channel|where)\b/.test(lower)) {
     return true;
   }
   return (
@@ -253,10 +270,48 @@ function isRecommendationQuery(text: string): boolean {
   );
 }
 
+/** "What needs my attention?", "Any alerts?", "What should I worry about?" */
+/** "Show feedback", "What couldn't you answer?" */
+export function isFeedbackLogQuery(text: string): boolean {
+  return /\b(feedback( log)?|couldn'?t (you )?answer|unanswered)\b/i.test(text);
+}
+
+/** "Did it work?", "How did my changes do?", "Show outcomes" */
+export function isOutcomeQuery(text: string): boolean {
+  return /\b(did (it|that|this|they|my \w+( \w+)?) work|how did my (changes?|actions?|bids?) (do|go|perform)|outcomes?|did .{0,30} help)\b/i.test(text);
+}
+
+/** "Deep dive into ROAS on Amazon", "dig into this", "full analysis" */
+export function isDeepDiveQuery(text: string): boolean {
+  return /\b(deep[- ]?dive|dig (into|deeper)|full (analysis|investigation|picture))\b/i.test(text);
+}
+
+export function isSituationQuery(text: string): boolean {
+  return /\b(alerts?|needs? (my )?attention|worry about|be worried about|anything (urgent|wrong)|what's wrong|situations?)\b/i.test(
+    text,
+  );
+}
+
+/** "Run a root-cause analysis", "RCA for ROAS", "what's driving this?" */
+export function isRcaQuery(text: string): boolean {
+  return /\b(root[- ]?cause|rca|driver tree|what('s| is) driving (this|it|the (drop|decline|change))|break (it|this) down by drivers?)\b/i.test(
+    text,
+  );
+}
+
+export function isProductRankingQuery(text: string): boolean {
+  const lower = text.toLowerCase();
+  if (lower.includes("caused") || lower.includes("affect")) return false;
+  return (
+    /\b(top|best|worst|bottom|leading)\b.*\b(products?|skus?)\b/.test(lower) ||
+    /\b(products?|skus?)\b.*\b(selling|performing) (best|worst)\b/.test(lower)
+  );
+}
+
 function isRootCauseQuery(text: string): boolean {
   const lower = text.toLowerCase();
   return (
-    lower.includes("why ") ||
+    /\bwhy\b/.test(lower) ||
     lower.includes("why did") ||
     (lower.includes("decline") && !lower.includes("when did")) ||
     (lower.includes("what happened") && !isTemporalQuery(text)) ||
@@ -268,7 +323,8 @@ function isRootCauseQuery(text: string): boolean {
 function isExecutiveQuery(text: string): boolean {
   const lower = text.toLowerCase();
   return (
-    lower.includes("biggest risk") ||
+    /\bbiggest (\w+ )?risks?\b/.test(lower) ||
+    lower.includes("leadership focus") ||
     lower.includes("business summary") ||
     lower.includes("how is the business performing") ||
     lower.includes("executive summary") ||
@@ -286,6 +342,15 @@ export function classifyIntent(
 ): AskAriaIntent {
   const trimmed = text.trim();
   const lower = trimmed.toLowerCase();
+
+  if (isFeedbackLogQuery(trimmed)) {
+    return "feedback_log";
+  }
+
+  // "How did my bids do?" is about past actions, not a new bid.
+  if (isOutcomeQuery(trimmed)) {
+    return "outcome_check";
+  }
 
   const actionParse = parseActionRequest(trimmed);
 
@@ -319,11 +384,38 @@ export function classifyIntent(
     return "action_request";
   }
 
+  if (isGreeting(trimmed)) {
+    return "greeting";
+  }
+
+  if (metricDefinitionTerm(trimmed)) {
+    return "metric_definition";
+  }
+
+  if (isOutcomeQuery(trimmed)) {
+    return "outcome_check";
+  }
+
+  if (isDeepDiveQuery(trimmed)) {
+    return "deep_dive";
+  }
+
+  if (isRcaQuery(trimmed)) {
+    return "root_cause_analysis";
+  }
+
+  // Executive questions often name a period ("this month") without asking
+  // for a date window, so they win over temporal routing.
+  if (isExecutiveQuery(trimmed)) {
+    return "executive_summary";
+  }
+
   if (isTemporalQuery(trimmed)) {
-    if (hasActiveInvestigation(memory, context) || isFollowUpReference(trimmed)) {
-      return "temporal_follow_up";
-    }
     return "temporal_follow_up";
+  }
+
+  if (isProductRankingQuery(trimmed)) {
+    return "product_ranking";
   }
 
   if (
@@ -357,6 +449,10 @@ export function classifyIntent(
     return "platform_analysis";
   }
 
+  if (isSituationQuery(trimmed)) {
+    return "situation_alerts";
+  }
+
   if (isRecommendationQuery(trimmed)) {
     return "recommendation";
   }
@@ -373,13 +469,44 @@ export function classifyIntent(
     return "platform_summary";
   }
 
-  if (
-    lower.includes("what changed") ||
-    lower.includes("perform") ||
-    lower.includes("summary")
-  ) {
+  if (hasPerformanceSignal(trimmed)) {
     return "general_performance";
   }
 
-  return "general_performance";
+  // Nothing recognisable: say so instead of guessing an answer.
+  return "unknown";
+}
+
+export function isGreeting(text: string): boolean {
+  return /^\s*(hi|hello|hey|hiya|good (morning|afternoon|evening)|thanks|thank you)\b[\s!.,?]*(aria)?[\s!.?]*$/i.test(
+    text,
+  );
+}
+
+/** Returns the metric name asked about in "what is ACOS?"-style questions. */
+export function metricDefinitionTerm(text: string): string | null {
+  const match = text
+    .trim()
+    .match(
+      /^(?:what(?:'s| is| does)|define|explain|meaning of)\s+(?:an?\s+|the\s+)?([a-z][a-z ]{1,30}?)(?:\s+mean)?\s*\??$/i,
+    );
+  if (!match) return null;
+  const term = match[1].trim().toLowerCase();
+  return /\b(roas|acos|ctr|cpc|cpm|conversion rate|conversion|gross sales|net sales|revenue|buy box share|buy box|sessions|orders|units sold|aov|average order value|impressions|clicks|ad spend|spend)\b/.test(
+    term,
+  )
+    ? term
+    : null;
+}
+
+function hasPerformanceSignal(text: string): boolean {
+  const lower = text.toLowerCase();
+  return (
+    hasExplicitMetricInUtterance(text) ||
+    isPlatformScopeRequest(text) ||
+    extractPlatformIdsFromText(text).length > 0 ||
+    /\b(perform|summary|overview|doing|going|status|update|business|sales|numbers|trend|changed?|happen|up with|insight|grow|opportunit|risk|attention|impact|focus|campaign|account|product|brand|platform|channel|revenue|drove|driv)/.test(
+      lower,
+    )
+  );
 }

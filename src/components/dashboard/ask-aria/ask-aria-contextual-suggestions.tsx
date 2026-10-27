@@ -36,12 +36,12 @@ export function AskAriaContextualSuggestions({ visible }: { visible?: boolean })
 
   return (
     <div className="mt-2">
-      <p className="mb-1.5 type-label text-text-tertiary">Next steps</p>
+      <p className="mb-1.5 type-label text-text-tertiary">Follow-up questions</p>
       <ul
         className="flex max-w-full flex-wrap gap-1.5 max-md:max-h-24 max-md:overflow-x-auto max-md:flex-nowrap max-md:pb-0.5"
-        aria-label="Next steps"
+        aria-label="Follow-up questions"
       >
-      {suggestions.map((prompt) => (
+      {suggestions.slice(0, 3).map((prompt) => (
         <li key={prompt}>
           <button
             type="button"

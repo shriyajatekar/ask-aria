@@ -7,7 +7,11 @@ import {
   PERFORMANCE_DATES,
   PERFORMANCE_RECORDS,
 } from "./performance";
-import { SCENARIO_DEFINITIONS } from "./scenarios";
+import {
+  COMPARISON_PERIOD,
+  ROAS_DECLINE_WINDOW,
+  SCENARIO_DEFINITIONS,
+} from "./scenarios";
 
 export interface ValidationResult {
   valid: boolean;
@@ -95,14 +99,14 @@ export function validateAnalyticsDataset(): ValidationResult {
   const amazonEarly = PERFORMANCE_RECORDS.filter(
     (record) =>
       record.platformId === "amazon" &&
-      record.date >= "2025-12-19" &&
-      record.date <= "2026-01-16",
+      record.date >= COMPARISON_PERIOD.start &&
+      record.date <= COMPARISON_PERIOD.end,
   );
   const amazonLate = PERFORMANCE_RECORDS.filter(
     (record) =>
       record.platformId === "amazon" &&
-      record.date >= "2026-01-24" &&
-      record.date <= "2026-02-15",
+      record.date >= ROAS_DECLINE_WINDOW.start &&
+      record.date <= ROAS_DECLINE_WINDOW.end,
   );
   const avg = (values: number[]) =>
     values.length === 0

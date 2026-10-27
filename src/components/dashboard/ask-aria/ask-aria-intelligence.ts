@@ -1,15 +1,26 @@
 import { BRANDS } from "@/data/brands";
-import { METRIC_BY_ID } from "@/data/metrics";
+import { METRIC_BY_ID, METRICS } from "@/data/metrics";
 import { PERFORMANCE_RECORDS } from "@/data/performance";
 import { PLATFORMS, PLATFORM_BY_ID } from "@/data/platforms";
 import { PRODUCT_BY_ID } from "@/data/products";
-import { PERFORMANCE_DATE_RANGE } from "@/data/scenarios";
+import {
+  completeThroughFor,
+  PERFORMANCE_DATE_RANGE,
+  PLATFORM_DATA_THROUGH,
+} from "@/data/scenarios";
 import {
   calculatePercentageChange,
   getTrendDirection,
 } from "@/lib/analytics/calculations";
 import { aggregateMetric } from "@/lib/analytics/comparisons";
 import { rankProducts } from "@/lib/analytics/rankings";
+import {
+  analyzeRootCause,
+  type RcaDriver,
+  type RcaMetricId,
+} from "@/lib/analytics/root-cause";
+import { assessBidRisk } from "@/lib/analytics/bid-risk";
+import { findPastEpisode, suggestionForDriver } from "@/lib/analytics/situations";
 import {
   filterPerformanceRecords,
   getMetricAggregationType,
@@ -46,9 +57,19 @@ import {
 import {
   classifyIntent,
   isCapabilityDiscoveryQuery,
+  isGrowthQuestion,
+  isRcaQuery,
   isMonitorListingQuery,
   isSendThisConfirmPhrase,
+  metricDefinitionTerm,
 } from "./ask-aria-intent";
+import { goldenPathChips } from "./ask-aria-golden-path";
+import { translateHinglish } from "./ask-aria-hinglish";
+import { buildSituationMessage, describePastEpisode } from "./ask-aria-situations";
+import { buildOutcomeMessage } from "./ask-aria-outcomes";
+import type { TrackedAction } from "@/lib/analytics/outcomes";
+import type { FeedbackSummary } from "@/lib/ask-aria/feedback";
+import { buildCollabDraftPartial, isCollabAction } from "./ask-aria-collab-actions";
 import {
   buildHistoricalSectionLines,
   findHistoricalMetricDeclines,
@@ -88,6 +109,7 @@ import {
 } from "./ask-aria-insight-sections";
 import { createMessageId } from "./ask-aria-storage";
 import type {
+  AskAriaActionDraft,
   AskAriaFullContext,
   AskAriaInvestigationMemory,
   AskAriaMessage,
@@ -188,9 +210,13 @@ function prependAnalysisSections(
   scope: ResolvedQueryScope,
   sections: import("./ask-aria-types").AskAriaInsightSection[],
 ): import("./ask-aria-types").AskAriaInsightSection[] {
+  // Each answer's own window (dashboard period or a time question's window)
+  // is checked against what every platform in scope has reported.
+  const partial = partialDataNote(scope.scopeLabel, context.dateRange.end);
   return [
     buildPeriodTransparencySection(context),
     insightSection("scope", "Scope", [`Analyzed: ${scope.scopeLabel}`]),
+    ...(partial ? [insightSection("data_freshness", "Data freshness", [partial])] : []),
     ...sections,
   ];
 }
@@ -207,6 +233,8 @@ function metricDelta(
   return { cur, prev, pct, direction: getTrendDirection(cur, prev) };
 }
 
+const METRICS_BY_NAME_LENGTH = [...METRICS].sort((a, b) => b.name.length - a.name.length);
+
 function resolveFocusMetric(
   context: AskAriaFullContext,
   memory: AskAriaInvestigationMemory,
@@ -218,6 +246,12 @@ function resolveFocusMetric(
   if (lower.includes("gross sales")) return "gross_sales";
   if (lower.includes("orders")) return "orders";
   if (lower.includes("acos")) return "acos";
+  // Any other metric named in full ("Sessions", "Buy Box Share"), longest
+  // name first so "Net Sales" wins over "Sales".
+  const named = METRICS_BY_NAME_LENGTH.find((metric) =>
+    lower.includes(metric.name.toLowerCase()),
+  );
+  if (named) return named.id;
   if (memory.activeAnalysisContext?.metricId) {
     return memory.activeAnalysisContext.metricId;
   }
@@ -230,7 +264,14 @@ function resolveFocusMetric(
 
 function resolveTemporalWindow(text: string): AskAriaTemporalWindow {
   const lower = text.toLowerCase();
-  if (lower.includes("last 30") || lower.includes("30 day")) return "last_30_days";
+  if (
+    lower.includes("last 30") ||
+    lower.includes("30 day") ||
+    lower.includes("this month")
+  ) {
+    return "last_30_days";
+  }
+  if (lower.includes("weekend")) return "weekend";
   if (lower.includes("last 7") || lower.includes("7 day")) return "last_7_days";
   if (lower.includes("previous week") || lower.includes("last week")) {
     return "previous_week";
@@ -243,7 +284,7 @@ function buildBrandAnalysisMessage(
   context: AskAriaFullContext,
   role: UserRole,
   scope: ResolvedQueryScope,
-): AskAriaMessage {
+): { message: AskAriaMessage; weakest?: { brandId: string; brandName: string } } {
   const { current, comparison } = filterForScope(context, scope);
   const rows = BRANDS.map((brand) => {
     const curRecords = current.filter((record) => record.brandId === brand.id);
@@ -261,14 +302,67 @@ function buildBrandAnalysisMessage(
   }).sort((a, b) => a.pct - b.pct);
 
   const formatted = formatBrandAnalysis(role, rows);
+  const weakest = rows[0] && rows[0].pct < 0 ? rows[0] : undefined;
 
   return {
-    id: createMessageId(),
-    kind: "insight",
-    title: formatted.title,
-    summary: formatted.summary,
-    sections: prependAnalysisSections(context, scope, formatted.sections),
-    createdAt: Date.now(),
+    message: {
+      id: createMessageId(),
+      kind: "insight",
+      title: formatted.title,
+      summary: formatted.summary,
+      sections: prependAnalysisSections(context, scope, formatted.sections),
+      createdAt: Date.now(),
+    },
+    weakest: weakest
+      ? { brandId: weakest.brandId, brandName: weakest.brandName }
+      : undefined,
+  };
+}
+
+/** Below this, a period-over-period move is treated as noise, not a trend. */
+export const MATERIAL_CHANGE_PCT = 1;
+
+/**
+ * "Say when uncertain": flags questions whose premise the data contradicts
+ * ("why did ROAS drop?" when it rose) and moves too small to explain.
+ */
+export function buildPremiseCaveat(
+  question: string,
+  metricLabel: string,
+  scopeLabel: string,
+  pct: number,
+): string | undefined {
+  const lower = question.toLowerCase();
+  const claimsDown = /\b(drop|dropp|fall|fell|declin|decreas|down|worse|lower)/.test(lower);
+  const claimsUp = /\b(rise|rose|grow|grew|increas|go up|went up|up\b|better|higher|improv)/.test(lower);
+  const actual = pct > 0 ? "rose" : pct < 0 ? "fell" : "did not change";
+  const where = scopeLabel === "all platforms" ? "" : ` on ${scopeLabel}`;
+
+  if (claimsDown && !claimsUp && pct > 0) {
+    return `${metricLabel}${where} didn't drop — it ${actual} ${formatPct(pct)} vs the comparison period. Here's the full picture.`;
+  }
+  if (claimsUp && !claimsDown && pct < 0) {
+    return `${metricLabel}${where} didn't go up — it ${actual} ${formatPct(pct)} vs the comparison period. Here's the full picture.`;
+  }
+  if (Math.abs(pct) < MATERIAL_CHANGE_PCT) {
+    return `${metricLabel}${where} moved only ${formatPct(pct)} — too small to treat as a real change, so I can't point to a clear cause.`;
+  }
+  return undefined;
+}
+
+/** Platforms an answer covers (empty = all). */
+function scopePlatformIds(scope: ResolvedQueryScope): PlatformId[] {
+  return scope.mode === "single_platform" || scope.mode === "multi_platform"
+    ? scope.platformIds
+    : [];
+}
+
+function singlePlatformScope(platformId: PlatformId): ResolvedQueryScope {
+  return {
+    mode: "single_platform",
+    platformIds: [platformId],
+    scopeLabel: PLATFORM_BY_ID[platformId]?.name ?? platformId,
+    usedDashboardDefault: false,
   };
 }
 
@@ -340,6 +434,7 @@ function buildPlatformComparisonMessage(
     scope,
   );
   const metricId = resolveFocusMetric(context, memory, text);
+  const growthQuestion = isGrowthQuestion(text);
 
   const rows = selectedPlatforms
     .map((platformId) => {
@@ -353,14 +448,18 @@ function buildPlatformComparisonMessage(
         cur: delta.cur,
       };
     })
-    .sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct));
+    .sort((a, b) =>
+      growthQuestion ? b.pct - a.pct : Math.abs(b.pct) - Math.abs(a.pct),
+    );
 
   const top = rows[0];
   const lines =
     role === "CXO"
       ? top
         ? [
-            `${top.name} shows the largest ${metricName(metricId)} movement (${formatPct(top.pct)}) among selected platforms.`,
+            growthQuestion
+              ? `${top.name} grew fastest: ${metricName(metricId)} ${formatPct(top.pct)} vs the comparison period.`
+              : `${top.name} shows the largest ${metricName(metricId)} movement (${formatPct(top.pct)}) among selected platforms.`,
           ]
         : ["No platform movement available in the current filters."]
       : rows.slice(0, 5).map(
@@ -375,7 +474,11 @@ function buildPlatformComparisonMessage(
       role === "CXO"
         ? "Platform movement — summary"
         : "Platform comparison",
-    summary: `Largest ${metricName(metricId)} shifts across ${scope.scopeLabel} in the workspace.`,
+    summary: top
+      ? growthQuestion
+        ? `${top.name} grew fastest: ${metricName(metricId)} ${formatPct(top.pct)} vs the comparison period.`
+        : `${top.name} moved most: ${metricName(metricId)} ${formatPct(top.pct)} vs the comparison period.`
+      : `No ${metricName(metricId)} data for ${scope.scopeLabel} in the current filters.`,
     sections: prependAnalysisSections(context, scope, [
       insightSection("platforms", "Platforms", lines),
     ]),
@@ -400,12 +503,16 @@ function buildInsightMessage(
   memory: AskAriaInvestigationMemory,
   role: UserRole,
   scope: ResolvedQueryScope,
+  question?: string,
 ): { message: AskAriaMessage; memory: AskAriaInvestigationMemory } {
   const { current, comparison, selectedPlatforms } = filterForScope(
     context,
     scope,
   );
   const primary = metricDelta(current, comparison, metricId);
+  const caveat = question
+    ? buildPremiseCaveat(question, metricName(metricId), scope.scopeLabel, primary.pct)
+    : undefined;
   const orders = metricDelta(current, comparison, "orders");
   const conversion = metricDelta(current, comparison, "conversion_rate");
 
@@ -501,6 +608,7 @@ function buildInsightMessage(
         },
       ],
       handoffs,
+      caveat,
       createdAt: Date.now(),
     },
     memory: {
@@ -658,7 +766,7 @@ function buildProductsFollowUp(
     id: createMessageId(),
     kind: "insight",
     title: formatted.title,
-    summary: `${formatted.summary} Scope: ${scope.scopeLabel}.`,
+    summary: formatted.summary,
     sections: prependAnalysisSections(context, scope, [
       insightSection("contributors", sectionHeading, formatted.lines),
     ]),
@@ -696,12 +804,16 @@ function buildTemporalMessage(
       ? context.consolidatedChartMetric
       : context.focusMetric);
 
-  const end: string = PERFORMANCE_DATE_RANGE.end;
-  let rangeStart: string = addDays(end, -1);
+  // Windows end on the latest day every platform in scope has reported.
+  const end: string = completeThroughFor(scopePlatformIds(scope));
+  let rangeStart: string = end;
   let rangeEnd: string = end;
-  let baselineStart: string = addDays(end, -2);
-  let baselineEnd: string = addDays(end, -2);
-  let title = `Yesterday — ${formatDisplayDate(addDays(end, -1))}`;
+  let baselineStart: string = addDays(end, -1);
+  let baselineEnd: string = addDays(end, -1);
+  let title =
+    end === PERFORMANCE_DATE_RANGE.end
+      ? `Yesterday — ${formatDisplayDate(end)}`
+      : `Latest full day — ${formatDisplayDate(end)} (some platforms report later)`;
 
   if (window === "last_7_days") {
     rangeStart = clampDate(addDays(end, -6));
@@ -721,13 +833,17 @@ function buildTemporalMessage(
     baselineEnd = clampDate(addDays(rangeStart, -1));
     baselineStart = clampDate(addDays(baselineEnd, -6));
     title = `Previous week — ${formatDisplayDate(rangeStart)} to ${formatDisplayDate(rangeEnd)}`;
+  } else if (window === "weekend") {
+    // Latest Saturday–Sunday in the dataset vs the weekend before it
+    // (same number of days, so totals compare fairly).
+    const endDay = new Date(`${end}T00:00:00.000Z`).getUTCDay();
+    rangeEnd = addDays(end, endDay === 0 ? 0 : -endDay);
+    rangeStart = addDays(rangeEnd, -1);
+    baselineEnd = addDays(rangeEnd, -7);
+    baselineStart = addDays(rangeStart, -7);
+    title = `Weekend — ${formatDisplayDate(rangeStart)} to ${formatDisplayDate(rangeEnd)} vs the weekend before`;
   } else if (window === "decline_onset") {
     return buildDeclineOnsetMessage(context, focusMetric, scope);
-  } else {
-    rangeStart = addDays(end, -1);
-    rangeEnd = addDays(end, -1);
-    baselineStart = addDays(end, -2);
-    baselineEnd = addDays(end, -2);
   }
 
   const catalog = {
@@ -791,12 +907,22 @@ function buildTemporalMessage(
             "Use campaign and product views to validate the evidence before taking action.",
           ];
 
+  // Cite the window actually analysed, not the dashboard's date range.
+  const windowContext = {
+    ...context,
+    dateRange: { start: rangeStart, end: rangeEnd },
+    comparisonPeriod: { start: baselineStart, end: baselineEnd },
+  };
+  const lead = metricLines[0];
+
   return {
     id: createMessageId(),
     kind: "insight",
     title,
-    summary: `${metricName(focusMetric)} and related metrics for ${platformLabel}, compared with the prior baseline window in the synthetic dataset.`,
-    sections: prependAnalysisSections(context, scope, [
+    summary: lead
+      ? `${lead.label} was ${lead.value} for ${platformLabel} (${lead.change} vs the window before).`
+      : `No data for ${platformLabel} in this window.`,
+    sections: prependAnalysisSections(windowContext, scope, [
       insightSection("interpretation", "Interpretation", interpretationLines),
     ]),
     metrics: metricLines,
@@ -820,7 +946,7 @@ function buildDeclineOnsetMessage(
         : undefined,
   };
 
-  const end: string = PERFORMANCE_DATE_RANGE.end;
+  const end: string = completeThroughFor(scopePlatformIds(scope));
   let onset: string = end;
   for (let offset = 1; offset <= 21; offset += 1) {
     const day = addDays(end, -offset);
@@ -919,29 +1045,428 @@ function buildRecommendation(
 function buildExecutiveSummary(
   context: AskAriaFullContext,
   scope: ResolvedQueryScope,
-): AskAriaMessage {
-  const { current, comparison } = filterForScope(context, scope);
+): { message: AskAriaMessage; riskPlatformId?: PlatformId } {
+  const { current, comparison, selectedPlatforms } = filterForScope(
+    context,
+    scope,
+  );
   const revenue = metricDelta(current, comparison, "gross_sales");
   const roas = metricDelta(current, comparison, "roas");
 
+  // Rank platforms by rupee impact, not %, so a small platform's big swing
+  // doesn't outrank a large platform's real loss.
+  const platformRows = selectedPlatforms
+    .map((platformId) => {
+      const delta = metricDelta(
+        current.filter((r) => r.platformId === platformId),
+        comparison.filter((r) => r.platformId === platformId),
+        "gross_sales",
+      );
+      return { platformId, delta, impact: delta.cur - delta.prev };
+    })
+    .sort((a, b) => a.impact - b.impact);
+  const risk = platformRows[0]?.impact < 0 ? platformRows[0] : undefined;
+  const growth =
+    platformRows.length > 1 && platformRows[platformRows.length - 1].impact > 0
+      ? platformRows[platformRows.length - 1]
+      : undefined;
+  const nameOf = (id: PlatformId) => PLATFORM_BY_ID[id]?.name ?? id;
+  const rupees = (value: number) => formatMetricValue("gross_sales", Math.abs(value));
+
+  const lead = risk
+    ? `Biggest risk: ${nameOf(risk.platformId)} Gross Sales fell ${formatPct(risk.delta.pct).replace(/^-/, "")} (${rupees(risk.impact)} lost), the largest drop of any platform.`
+    : `No platform lost Gross Sales in ${scope.scopeLabel} this period.`;
+
+  return {
+    message: {
+      id: createMessageId(),
+      kind: "insight",
+      title: "Business summary",
+      summary: lead,
+      sections: prependAnalysisSections(context, scope, [
+        insightSection("major_changes", "Overall", [
+          `Gross Sales ${formatPct(revenue.pct)} and ROAS ${formatPct(roas.pct)} vs the comparison period.`,
+        ]),
+        insightSection(
+          "risks",
+          "Risks",
+          platformRows
+            .filter((row) => row.impact < 0)
+            .slice(0, 3)
+            .map(
+              (row) =>
+                `${nameOf(row.platformId)}: ${formatPct(row.delta.pct)} (${rupees(row.impact)} lost)`,
+            ),
+        ),
+        insightSection(
+          "growth",
+          "Growth",
+          growth
+            ? [
+                `${nameOf(growth.platformId)}: ${formatPct(growth.delta.pct)} (${rupees(growth.impact)} gained)`,
+              ]
+            : ["No platform grew Gross Sales this period."],
+        ),
+      ]),
+      handoffs: risk
+        ? [
+            {
+              label: `Why did ${nameOf(risk.platformId)} drop?`,
+              prompt: "Why?",
+            },
+          ]
+        : [],
+      createdAt: Date.now(),
+    },
+    riskPlatformId: risk?.platformId,
+  };
+}
+
+const METRIC_ALIASES: Record<string, MetricId> = {
+  conversion: "conversion_rate",
+  ctr: "click_through_rate",
+  aov: "average_order_value",
+  "buy box": "buy_box_share",
+  spend: "ad_spend",
+};
+
+function findMetricByTerm(term: string): MetricId | undefined {
+  const normalized = term.toLowerCase().trim();
+  const byName = Object.values(METRIC_BY_ID).find(
+    (metric) =>
+      metric.name.toLowerCase() === normalized ||
+      metric.id.replace(/_/g, " ") === normalized,
+  );
+  return byName?.id ?? METRIC_ALIASES[normalized];
+}
+
+/** Greetings, metric definitions and questions Aria can't answer — no analysis card. */
+function buildNonAnalysisReply(
+  intent: "greeting" | "metric_definition" | "unknown",
+  text: string,
+  role: UserRole,
+): AskAriaMessage {
+  const chips = goldenPathChips(role);
+  let reply: string;
+  if (intent === "greeting") {
+    reply =
+      "Hi — I answer questions about sales, ads and platform performance in this demo workspace. Try one of these:";
+  } else if (intent === "metric_definition") {
+    const term = metricDefinitionTerm(text) ?? "";
+    const metricId = findMetricByTerm(term);
+    const metric = metricId ? METRIC_BY_ID[metricId] : undefined;
+    reply = metric
+      ? `${metric.name}: ${metric.description}.`
+      : `I don't have a definition for "${term}" in this workspace.`;
+    if (metric) {
+      chips.unshift({
+        label: `How is ${metric.name} trending?`,
+        prompt: `What changed in ${metric.name}?`,
+      });
+    }
+  } else {
+    reply =
+      "I'm not sure what you're asking, so I won't guess. I can explain changes in sales, ROAS, conversion and orders across the 12 platforms, compare platforms, brands and products, or draft a report. For example:";
+  }
+  return {
+    id: createMessageId(),
+    kind: "assistant_text",
+    text: reply,
+    suggestionChips: chips.slice(0, 3),
+    createdAt: Date.now(),
+  };
+}
+
+/** Bid changes get a trend check before the user confirms them. */
+export function withBidRisk(draft: AskAriaActionDraft): AskAriaActionDraft {
+  const isBid = draft.type === "campaign_bid" || draft.type === "schedule_bid_change";
+  if (!isBid || draft.newBid === undefined || !draft.platformId) return draft;
+  const risk = assessBidRisk(PERFORMANCE_RECORDS, {
+    platformId: draft.platformId,
+    productId: draft.productId,
+    newBid: draft.newBid,
+    currentBid: draft.currentBid,
+    asOf: PLATFORM_DATA_THROUGH[draft.platformId],
+  });
+  return {
+    ...draft,
+    bidRisk: { level: risk.level, reasons: risk.reasons, suggestion: risk.suggestion },
+  };
+}
+
+/** RCA covers two driver trees; other metrics map to the tree they sit in. */
+export function rcaMetricFor(text: string, memoryMetric?: MetricId): RcaMetricId {
+  if (/\b(roas|acos|cpc|ad spend|ads?)\b/i.test(text)) return "roas";
+  if (/\b(sales|revenue|orders|conversion|sessions|traffic)\b/i.test(text)) {
+    return "gross_sales";
+  }
+  return memoryMetric === "roas" || memoryMetric === "acos" || memoryMetric === "cpc"
+    ? "roas"
+    : "gross_sales";
+}
+
+const RCA_FORMULA: Record<RcaMetricId, string> = {
+  gross_sales: "Gross Sales = Sessions × Conversion rate × Sales per order",
+  roas: "ROAS = Ad sales per click ÷ Cost per click",
+};
+
+function formatRcaValue(format: RcaDriver["format"], value: number): string {
+  if (format === "percentage") return `${value.toFixed(2)}%`;
+  if (format === "integer") return Math.round(value).toLocaleString("en-IN");
+  if (format === "currency") {
+    return value < 100
+      ? `₹${value.toFixed(2)}`
+      : formatMetricValue("gross_sales", value);
+  }
+  return value.toFixed(2);
+}
+
+function formatRcaContribution(metric: RcaMetricId, value: number): string {
+  const sign = value >= 0 ? "+" : "−";
+  return metric === "roas"
+    ? `${sign}${Math.abs(value).toFixed(2)}`
+    : `${sign}${formatMetricValue("gross_sales", Math.abs(value))}`;
+}
+
+function signedPct(value: number): string {
+  return `${value >= 0 ? "+" : "−"}${Math.abs(value).toFixed(1)}%`;
+}
+
+/** Root-cause analysis answer: driver waterfall, where it happened, what was ruled out. */
+function buildRcaMessage(
+  context: AskAriaFullContext,
+  scope: ResolvedQueryScope,
+  metric: RcaMetricId,
+): AskAriaMessage {
+  const { current, comparison } = filterForScope(context, scope);
+  const rca = analyzeRootCause(metric, current, comparison);
+  const metricLabel = metricName(metric);
+  const valueOf = (v: number) =>
+    metric === "roas" ? v.toFixed(2) : formatMetricValue("gross_sales", v);
+  const where = scope.scopeLabel === "all platforms" ? "" : ` on ${scope.scopeLabel}`;
+  const moved = rca.change < 0 ? "drop" : "rise";
+  const top = rca.topDriver;
+
+  const summary = top
+    ? `${top.label} drives ${Math.abs(top.sharePct).toFixed(0)}% of the ${metricLabel} ${moved}${where}: it ${top.changePct >= 0 ? "rose" : "fell"} ${Math.abs(top.changePct).toFixed(1)}% (${formatRcaValue(top.format, top.previous)} → ${formatRcaValue(top.format, top.current)}).`
+    : `${metricLabel}${where} barely moved (${signedPct(rca.changePct)}), so there is no cause to trace.`;
+
+  return {
+    id: createMessageId(),
+    kind: "rca",
+    title: `Root-cause analysis — ${metricLabel}${where}`,
+    summary,
+    rcaMetric: metric,
+    metricLabel,
+    scopeLabel: scope.scopeLabel,
+    totalLine: `${metricLabel} ${valueOf(rca.previous)} → ${valueOf(rca.current)} (${signedPct(rca.changePct)})`,
+    formula: RCA_FORMULA[metric],
+    drivers: rca.drivers.map((d) => ({
+      label: d.label,
+      from: formatRcaValue(d.format, d.previous),
+      to: formatRcaValue(d.format, d.current),
+      changePct: signedPct(d.changePct),
+      contribution: formatRcaContribution(metric, d.contribution),
+      sharePct: d.sharePct,
+      role: d === top ? "cause" : d.sharePct < 0 ? "offset" : Math.abs(d.sharePct) < 10 ? "minor" : "cause",
+    })),
+    // A single-platform analysis would only show "Amazon 100%".
+    platforms: (scope.mode === "single_platform" ? [] : rca.platforms).map((p) => ({
+      label: PLATFORM_BY_ID[p.platformId]?.name ?? p.platformId,
+      sharePct: p.sharePct,
+    })),
+    products: rca.products.map((p) => ({
+      label: `${PRODUCT_BY_ID[p.productId]?.name ?? p.productId} (${PLATFORM_BY_ID[p.platformId]?.name ?? p.platformId})`,
+      sharePct: p.sharePct,
+    })),
+    ruledOut: rca.ruledOut,
+    otherSignals: rca.otherSignals,
+    confidence: rca.confidence,
+    confidenceReason: rca.confidenceReason,
+    caveat: rca.confidence === "low" ? rca.confidenceReason : undefined,
+    handoffs: top ? [{ label: "Export RCA report", prompt: "Create an RCA report" }] : [],
+    createdAt: Date.now(),
+  };
+}
+
+const DRIVER_ID_BY_LABEL: Record<string, string> = {
+  Sessions: "sessions",
+  "Conversion rate": "conversion",
+  "Sales per order": "sales_per_order",
+  "Ad sales per click": "sales_per_click",
+  "Cost per click": "cpc",
+};
+
+/**
+ * One-click deep dive. Composes the existing engines into one answer:
+ * what happened → why (driver tree) → where → has it happened before →
+ * what to do. No new calculations: every number comes from the same code
+ * as the single answers.
+ */
+function buildDeepDiveMessage(
+  context: AskAriaFullContext,
+  scope: ResolvedQueryScope,
+  metricId: MetricId,
+): AskAriaMessage {
+  const { current, comparison } = filterForScope(context, scope);
+  const primary = metricDelta(current, comparison, metricId);
+  const label = metricName(metricId);
+  const where = scope.scopeLabel === "all platforms" ? "" : ` on ${scope.scopeLabel}`;
+
+  const rca = buildRcaMessage(context, scope, rcaMetricFor(label, metricId));
+  if (rca.kind !== "rca") throw new Error("RCA builder returned the wrong message");
+  const top = rca.drivers.find((d) => d.role === "cause" && d.sharePct > 0);
+
+  const verb = primary.direction === "down" ? "fell" : primary.direction === "up" ? "rose" : "held steady at";
+  const movePct = Math.abs(primary.pct).toFixed(1);
+  const lead =
+    primary.direction === "flat"
+      ? `${label}${where} held steady at ${formatMetricValue(metricId, primary.cur)} vs the comparison period.`
+      : `${label}${where} ${verb} ${movePct}% to ${formatMetricValue(metricId, primary.cur)} vs the comparison period.`;
+  const summary = top ? `${lead} ${top.label} explains ${Math.round(top.sharePct)}% of the move.` : lead;
+
+  // History: the last comparable drop on this platform (or the platform
+  // that moved most when looking at all platforms).
+  const lookupPlatform: PlatformId | undefined =
+    scope.mode === "single_platform"
+      ? scope.platformIds[0]
+      : extractPlatformIdsFromText(rca.platforms[0]?.label ?? "")[0];
+  const situationMetric =
+    metricId === "roas" || metricId === "acos"
+      ? "roas"
+      : metricId === "conversion_rate"
+        ? "conversion_rate"
+        : "gross_sales";
+  let pastLine: string;
+  let hasPrecedent = false;
+  if (primary.direction !== "down") {
+    pastLine = "This isn't a drop, so there's no earlier drop to compare it with.";
+  } else if (!lookupPlatform) {
+    pastLine = "No single platform stands out, so there's no one history to compare with.";
+  } else {
+    const records = filterPerformanceRecords(PERFORMANCE_RECORDS, {
+      brandId: context.brandId,
+      category: context.category,
+      subcategory: context.subcategory,
+      productId: context.productId,
+    });
+    const past = findPastEpisode(
+      records,
+      lookupPlatform,
+      situationMetric,
+      context.dateRange.start,
+      PERFORMANCE_DATE_RANGE.start,
+    );
+    hasPrecedent = Boolean(past);
+    const lookedAt =
+      scope.mode === "single_platform"
+        ? ""
+        : `Checked ${PLATFORM_BY_ID[lookupPlatform]?.name ?? lookupPlatform}, where most of the move happened. `;
+    pastLine = lookedAt + describePastEpisode(past, {
+      metricLabel: metricName(situationMetric),
+      platformName: PLATFORM_BY_ID[lookupPlatform]?.name ?? lookupPlatform,
+      currentChangePct: primary.pct,
+    });
+  }
+
+  const suggestion =
+    primary.direction === "down"
+      ? suggestionForDriver(top ? DRIVER_ID_BY_LABEL[top.label] : undefined)
+      : "This is moving the right way. Set a monitor so you hear if it turns.";
+
+  const related = ([metricId, "gross_sales", "roas", "conversion_rate"] as MetricId[])
+    .filter((id, index, all) => all.indexOf(id) === index)
+    .slice(0, 3)
+    .map((id) => {
+      const delta = metricDelta(current, comparison, id);
+      return {
+        label: metricName(id),
+        value: formatMetricValue(id, delta.cur),
+        change: formatPct(delta.pct),
+        direction: delta.direction,
+      };
+    });
+
+  return {
+    id: createMessageId(),
+    kind: "deep_dive",
+    title: `Deep dive — ${label}${where}`,
+    summary,
+    metricLabel: label,
+    scopeLabel: scope.scopeLabel,
+    metrics: related,
+    rca,
+    pastLine,
+    hasPrecedent,
+    suggestion,
+    caveat: rca.caveat,
+    actions: [
+      { label: "Export report", prompt: "Create an RCA report" },
+      { label: "Create a task", prompt: "Create a task for this" },
+      { label: "Share on Slack", prompt: "Share this on Slack" },
+    ],
+    createdAt: Date.now(),
+  };
+}
+
+function executiveSummaryTurn(
+  userMessage: AskAriaMessage,
+  context: AskAriaFullContext,
+  scope: ResolvedQueryScope,
+  metricId: MetricId,
+): { messages: AskAriaMessage[]; memory: AskAriaInvestigationMemory } {
+  const summary = buildExecutiveSummary(context, scope);
+  const focusPlatform = summary.riskPlatformId ?? memoryPlatformFromScope(scope, context);
+  return {
+    messages: [userMessage, summary.message],
+    memory: {
+      topic: "metric_change",
+      metricId,
+      platformId: focusPlatform,
+      lastPlatform: focusPlatform,
+      lastTopic: "executive_summary",
+    },
+  };
+}
+
+function buildTopProductsMessage(
+  context: AskAriaFullContext,
+  metricId: MetricId,
+  scope: ResolvedQueryScope,
+  text: string,
+): AskAriaMessage {
+  const { current } = filterForScope(context, scope);
+  const worst = /\b(worst|bottom|lowest)\b/i.test(text);
+  const ranked = rankProducts(current).sort((a, b) =>
+    worst ? a.revenue - b.revenue : b.revenue - a.revenue,
+  );
+  const rows = ranked.slice(0, 5);
+  const label = worst ? "Lowest-selling products" : "Top products";
+  const lines = rows.map((row, index) => {
+    const name = PRODUCT_BY_ID[row.productId]?.name ?? row.productId;
+    const platform = PLATFORM_BY_ID[row.platformId]?.name ?? row.platformId;
+    return `${index + 1}. ${name} (${platform}): ${formatMetricValue("gross_sales", row.revenue)} · ROAS ${row.roas.toFixed(2)}`;
+  });
+  const first = rows[0];
   return {
     id: createMessageId(),
     kind: "insight",
-    title: "Business summary",
-    summary: `Executive view for ${scope.scopeLabel}.`,
+    title: `${label} by Gross Sales — ${scope.scopeLabel}`,
+    summary: first
+      ? `${PRODUCT_BY_ID[first.productId]?.name ?? first.productId} ${worst ? "sold the least" : "sold the most"}: ${formatMetricValue("gross_sales", first.revenue)} this period.`
+      : "No product sales in the current filters.",
     sections: prependAnalysisSections(context, scope, [
-      insightSection("major_changes", "Major changes", [
-        `Gross Sales ${formatPct(revenue.pct)} vs comparison period.`,
-        `ROAS ${formatPct(roas.pct)} vs comparison period.`,
-      ]),
-      insightSection("risks", "Risks", [
-        "Platforms with simultaneous order and conversion pressure.",
-        "Accounts with declining revenue concentration in top SKUs.",
-      ]),
-      insightSection("growth", "Growth", [
-        "Platforms with positive revenue and stable ROAS in the current window.",
-      ]),
+      insightSection("contributors", label, lines),
     ]),
+    handoffs: first
+      ? [
+          {
+            label: "View product analysis",
+            productId: first.productId,
+            platformId: first.platformId,
+          },
+        ]
+      : [],
     createdAt: Date.now(),
   };
 }
@@ -960,7 +1485,23 @@ function formatDisplayDate(iso: string): string {
   });
 }
 
+/**
+ * Shown when an empty conversation opens: the most urgent situation alert,
+ * with what happened last time and a suggestion. Falls back to the older
+ * ROAS nudge when nothing crosses the alert thresholds.
+ */
 export function buildProactiveInsight(
+  context: AskAriaFullContext,
+): AskAriaMessage | null {
+  const situation = buildSituationMessage(
+    context,
+    context.platform === "all" ? undefined : context.platform,
+  );
+  if (situation) return attachSource(situation, context, {});
+  return buildRoasNudge(context);
+}
+
+function buildRoasNudge(
   context: AskAriaFullContext,
 ): AskAriaMessage | null {
   const platformId =
@@ -999,6 +1540,10 @@ export interface ProcessAskAriaMessageOptions {
   recentMessages?: AskAriaMessage[];
   appUserEmail?: string;
   activeMonitors?: AriaMonitor[];
+  /** Answer feedback and unanswered questions, for "Show feedback". */
+  feedbackSummary?: FeedbackSummary;
+  /** Confirmed actions to check in "Did it work?". */
+  trackedActions?: TrackedAction[];
 }
 
 function buildCapabilityDiscoveryResponse(): AskAriaMessage {
@@ -1006,7 +1551,7 @@ function buildCapabilityDiscoveryResponse(): AskAriaMessage {
     id: createMessageId(),
     kind: "assistant_text",
     text:
-      "I help you understand commerce performance, create Google Docs and Sheets, draft and send Gmail, set simulated monitors, and prepare campaign actions — all from this conversation.",
+      "I explain why numbers moved (including a root-cause analysis), flag what needs attention with what happened last time, and turn findings into actions: Docs and Sheets reports, email, Slack or Teams posts, calendar invites, Jira or Asana tasks, a weekly digest, monitors and bid changes. Every action is previewed for you to confirm, and on this demo site they are simulated.",
     suggestionChips: CAPABILITY_DISCOVERY_CHIPS.map((chip) => ({
       label: chip.group,
       prompt: chip.prompt,
@@ -1073,7 +1618,121 @@ function buildMonitorListingResponse(monitors: AriaMonitor[]): AskAriaMessage {
   };
 }
 
+export const DEMO_DATASET_LABEL = "Synthetic demo data";
+
+/**
+ * "Always show the source": every analysis answer cites the dataset, scope
+ * and the exact periods compared, taken from the sections it was built from.
+ */
+function attachSource(
+  message: AskAriaMessage,
+  context: AskAriaFullContext,
+  memory: AskAriaInvestigationMemory,
+): AskAriaMessage {
+  if (
+    message.kind !== "insight" &&
+    message.kind !== "recommendation" &&
+    message.kind !== "rca" &&
+    message.kind !== "situation" &&
+    message.kind !== "deep_dive"
+  ) {
+    return message;
+  }
+  if (message.source) return message;
+  const sections = message.kind === "insight" ? message.sections : [];
+  const periods = sections.find((s) => s.id === "periods_analyzed")?.lines ?? [];
+  const scopeLine = sections.find((s) => s.id === "scope")?.lines[0];
+  const fallback = buildPeriodTransparencySection(context).lines;
+  const strip = (line: string | undefined) =>
+    (line ?? "").replace(/^[^:]+:\s*/, "").replace(" → ", " – ");
+  const platform = memory.lastPlatform ?? memory.platformId ?? context.platform;
+  const scope =
+    message.kind === "rca" || message.kind === "situation" || message.kind === "deep_dive"
+    ? message.scopeLabel
+    : scopeLine
+    ? strip(scopeLine)
+    : platform && platform !== "all"
+      ? PLATFORM_BY_ID[platform]?.name ?? platform
+      : "all platforms";
+  return {
+    ...message,
+    source: {
+      dataset: DEMO_DATASET_LABEL,
+      scope,
+      period: strip(periods[0] ?? fallback[0]),
+      comparison: strip(periods[1] ?? fallback[1]),
+      partial:
+        sections.length
+          ? sections.find((s) => s.id === "data_freshness")?.lines[0]
+          : partialDataNote(scope, context.dateRange.end),
+    },
+  };
+}
+
+/**
+ * When the period runs past the last day some platforms have reported, say
+ * so: their totals for those days are incomplete. (Answers with their own
+ * date window already end on a complete day.)
+ */
+export function partialDataNote(scopeLabel: string, periodEnd: string): string | undefined {
+  const named = PLATFORMS.find((p) => p.name.toLowerCase() === scopeLabel.toLowerCase());
+  const lagging = (named ? [named] : PLATFORMS).filter(
+    (p) => PLATFORM_DATA_THROUGH[p.id] < periodEnd,
+  );
+  if (!lagging.length) return undefined;
+  const byDate = new Map<string, string[]>();
+  for (const p of lagging) {
+    const date = PLATFORM_DATA_THROUGH[p.id];
+    byDate.set(date, [...(byDate.get(date) ?? []), p.name]);
+  }
+  const parts = [...byDate.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, names]) => `${names.join(", ")} through ${formatDisplayDate(date)}`);
+  return `Partial data: ${parts.join("; ")}, so the last days of this period are incomplete for ${lagging.length === 1 ? "it" : "them"}.`;
+}
+
 export function processAskAriaMessage(
+  text: string,
+  context: AskAriaFullContext,
+  memory: AskAriaInvestigationMemory,
+  role: UserRole = "ANALYST",
+  workspaceConnection?: WorkspaceConnectionState,
+  options?: ProcessAskAriaMessageOptions,
+): {
+  messages: AskAriaMessage[];
+  memory: AskAriaInvestigationMemory;
+} {
+  // Hinglish: answer the English question it maps to, keep the user's own
+  // words in their bubble, and show how Aria read it.
+  const translated = translateHinglish(text);
+  const result = routeAskAriaMessage(
+    translated ?? text,
+    context,
+    memory,
+    role,
+    workspaceConnection,
+    options,
+  );
+  let messages = result.messages.map((message) =>
+    attachSource(message, context, result.memory),
+  );
+  if (translated && messages[0]?.kind === "user") {
+    const [userMessage, ...replies] = messages;
+    messages = [
+      { ...userMessage, text: text.trim() },
+      {
+        id: createMessageId(),
+        kind: "assistant_text",
+        text: `I read this as: “${translated}”`,
+        createdAt: Date.now(),
+      },
+      ...replies,
+    ];
+  }
+  return { ...result, messages };
+}
+
+function routeAskAriaMessage(
   text: string,
   context: AskAriaFullContext,
   memory: AskAriaInvestigationMemory,
@@ -1374,6 +2033,9 @@ export function processAskAriaMessage(
         partial,
         recentMessages,
         memory,
+        isRcaQuery(trimmed)
+          ? { rcaMetric: rcaMetricFor(trimmed, memory.lastMetric ?? memory.metricId) }
+          : undefined,
       );
     }
 
@@ -1405,7 +2067,18 @@ export function processAskAriaMessage(
           : enrichEmailDraft(partial, context, enrichOptions);
     }
 
-    const draft = buildActionDraft(partial);
+    if (partial.type && isCollabAction(partial.type)) {
+      partial = {
+        ...partial,
+        ...buildCollabDraftPartial(partial.type, trimmed, {
+          context,
+          role,
+          messages: recentMessages,
+        }),
+      };
+    }
+
+    const draft = withBidRisk(buildActionDraft(partial));
     if (
       actionRequiresWorkspaceTool(draft.type) &&
       !isWorkspaceToolSatisfiedForAction(draft.type, workspaceConnection)
@@ -1538,6 +2211,17 @@ export function processAskAriaMessage(
     };
   }
 
+  if (
+    intent === "greeting" ||
+    intent === "metric_definition" ||
+    intent === "unknown"
+  ) {
+    return {
+      messages: [userMessage, buildNonAnalysisReply(intent, trimmed, role)],
+      memory,
+    };
+  }
+
   if (intent === "temporal_follow_up") {
     const temporalMemory = {
       topic: "temporal" as const,
@@ -1557,13 +2241,16 @@ export function processAskAriaMessage(
   }
 
   if (intent === "brand_analysis") {
+    const brands = buildBrandAnalysisMessage(context, role, scope);
     return {
-      messages: [userMessage, buildBrandAnalysisMessage(context, role, scope)],
+      messages: [userMessage, brands.message],
       memory: {
         topic: "metric_change",
         lastTopic: "brand_analysis",
         platformId: scopedPlatform,
         lastPlatform: scopedPlatform,
+        lastBrandId: brands.weakest?.brandId,
+        lastBrandName: brands.weakest?.brandName,
       },
     };
   }
@@ -1721,7 +2408,12 @@ export function processAskAriaMessage(
           id: createMessageId(),
           kind: "insight",
           title: `Historical pattern — ${metricName(focusMetric)}`,
-          summary: `Prior ${metricName(focusMetric)} declines in the available workspace history for ${scope.scopeLabel}.`,
+          summary: events.length
+            ? `${metricName(focusMetric)} on ${scope.scopeLabel} has dropped like this ${events.length} time${events.length === 1 ? "" : "s"} before in the available history.`
+            : `No comparable ${metricName(focusMetric)} drop on ${scope.scopeLabel} in the available history.`,
+          caveat: events.length
+            ? undefined
+            : `The synthetic dataset covers about 11 weeks (${formatDisplayDate(PERFORMANCE_DATE_RANGE.start)} – ${formatDisplayDate(PERFORMANCE_DATE_RANGE.end)}), too short to tell whether this is a recurring pattern.`,
           sections: prependAnalysisSections(context, scope, [
             insightSection("what_happened_historically", "What happened historically", lines),
           ]),
@@ -1755,12 +2447,46 @@ export function processAskAriaMessage(
   }
 
   if (intent === "root_cause") {
+    // A bare "why?" explains whatever the previous answer pointed at.
+    const isBareWhy = /^\s*why\b[\s?.!]*(is that|did that happen|so)?[\s?.!]*$/i.test(
+      trimmed,
+    );
+    if (isBareWhy && memory.lastTopic === "brand_analysis" && memory.lastBrandId) {
+      const brandContext = { ...context, brandId: memory.lastBrandId };
+      const insight = buildInsightMessage(
+        brandContext,
+        "gross_sales",
+        memory,
+        role,
+        scope,
+      );
+      const message =
+        insight.message.kind === "insight"
+          ? { ...insight.message, title: `${insight.message.title} — ${memory.lastBrandName}` }
+          : insight.message;
+      return {
+        messages: [userMessage, message],
+        memory: {
+          ...insight.memory,
+          lastBrandId: memory.lastBrandId,
+          lastBrandName: memory.lastBrandName,
+        },
+      };
+    }
+    const followScope =
+      isBareWhy &&
+      memory.lastTopic === "executive_summary" &&
+      memory.lastPlatform &&
+      memory.lastPlatform !== "all"
+        ? singlePlatformScope(memory.lastPlatform)
+        : scope;
     const insight = buildInsightMessage(
       context,
       metricId,
       memory,
       role,
-      scope,
+      followScope,
+      trimmed,
     );
     return {
       messages: [userMessage, insight.message],
@@ -1768,17 +2494,142 @@ export function processAskAriaMessage(
     };
   }
 
+  if (intent === "feedback_log") {
+    const f = options?.feedbackSummary ?? { helpful: 0, notHelpful: 0, reasons: [], unanswered: [] };
+    const total = f.helpful + f.notHelpful;
+    return {
+      messages: [
+        userMessage,
+        {
+          id: createMessageId(),
+          kind: "feedback_log",
+          summary: total
+            ? `${f.helpful} of ${total} rated answer${total === 1 ? " was" : "s were"} helpful. Feedback is kept in this browser only.`
+            : "No answers rated yet. Use the thumbs under any answer; feedback is kept in this browser only.",
+          reasons: f.reasons,
+          unanswered: f.unanswered,
+          createdAt: Date.now(),
+        },
+      ],
+      memory,
+    };
+  }
+
+  if (intent === "outcome_check") {
+    return {
+      messages: [userMessage, buildOutcomeMessage(options?.trackedActions ?? [])],
+      memory,
+    };
+  }
+
+  if (intent === "deep_dive") {
+    // Same platform as the question names, else the previous answer's, else
+    // the dashboard's current platform.
+    const named = extractPlatformIdsFromText(trimmed)[0];
+    const fromMemory =
+      memory.lastPlatform && memory.lastPlatform !== "all" ? memory.lastPlatform : undefined;
+    const fromDashboard = context.platform !== "all" ? context.platform : undefined;
+    const platformId = named ?? fromMemory ?? fromDashboard;
+    const diveScope = platformId ? singlePlatformScope(platformId) : scope;
+    const diveMetric = resolveFocusMetric(context, memory, trimmed);
+    const divePlatform = memoryPlatformFromScope(diveScope, context);
+    return {
+      messages: [userMessage, buildDeepDiveMessage(context, diveScope, diveMetric)],
+      memory: {
+        ...memory,
+        topic: "metric_change",
+        metricId: diveMetric,
+        lastMetric: diveMetric,
+        lastTopic: "deep_dive",
+        platformId: divePlatform,
+        lastPlatform: divePlatform,
+        activeAnalysisContext: buildActiveAnalysisContext(context, diveScope, diveMetric, undefined),
+      },
+    };
+  }
+
+  if (intent === "situation_alerts") {
+    const platformIds = extractPlatformIdsFromText(trimmed);
+    const situation = buildSituationMessage(context, platformIds[0]);
+    if (!situation) {
+      return {
+        messages: [
+          userMessage,
+          {
+            id: createMessageId(),
+            kind: "assistant_text",
+            text: platformIds.length
+              ? `Nothing on ${PLATFORM_BY_ID[platformIds[0]]?.name ?? "that platform"} crosses the alert thresholds this period (Gross Sales −10%, ROAS or conversion −8%).`
+              : "Nothing crosses the alert thresholds this period (Gross Sales −10%, ROAS or conversion −8%).",
+            createdAt: Date.now(),
+          },
+        ],
+        memory,
+      };
+    }
+    const alertPlatform =
+      situation.kind === "situation"
+        ? extractPlatformIdsFromText(situation.scopeLabel)[0]
+        : undefined;
+    return {
+      messages: [userMessage, situation],
+      memory: {
+        ...memory,
+        topic: "metric_change",
+        lastTopic: "situation",
+        platformId: alertPlatform ?? memory.platformId,
+        lastPlatform: alertPlatform ?? memory.lastPlatform,
+      },
+    };
+  }
+
+  if (intent === "root_cause_analysis") {
+    const rcaMetric = rcaMetricFor(
+      trimmed,
+      memory.activeAnalysisContext?.metricId ?? memory.lastMetric ?? memory.metricId,
+    );
+    // "Run a root-cause analysis" right after an answer analyses the same
+    // platform that answer was about, unless the question names one.
+    const rcaScope =
+      extractPlatformIdsFromText(trimmed).length === 0 &&
+      memory.lastPlatform &&
+      memory.lastPlatform !== "all"
+        ? singlePlatformScope(memory.lastPlatform)
+        : scope;
+    const rcaPlatform = memoryPlatformFromScope(rcaScope, context);
+    return {
+      messages: [userMessage, buildRcaMessage(context, rcaScope, rcaMetric)],
+      memory: {
+        ...memory,
+        topic: "metric_change",
+        metricId: rcaMetric,
+        lastMetric: rcaMetric,
+        lastTopic: "rca",
+        platformId: rcaPlatform,
+        lastPlatform: rcaPlatform,
+        activeAnalysisContext: buildActiveAnalysisContext(context, rcaScope, rcaMetric, undefined),
+      },
+    };
+  }
+
+  if (intent === "product_ranking") {
+    return {
+      messages: [userMessage, buildTopProductsMessage(context, metricId, scope, trimmed)],
+      memory: {
+        ...memory,
+        topic: "products",
+        metricId,
+        lastMetric: metricId,
+        lastTopic: "product_ranking",
+        platformId: scopedPlatform,
+        lastPlatform: scopedPlatform,
+      },
+    };
+  }
+
   if (intent === "executive_summary") {
     if (role === "CXO") {
-      return {
-        messages: [userMessage, buildExecutiveSummary(context, scope)],
-        memory: {
-          topic: "metric_change",
-          metricId,
-          platformId: scopedPlatform,
-          lastTopic: "executive_summary",
-        },
-      };
+      return executiveSummaryTurn(userMessage, context, scope, metricId);
     }
     if (role === "KAM") {
       return {
@@ -1811,15 +2662,7 @@ export function processAskAriaMessage(
 
   if (intent === "general_performance") {
     if (role === "CXO") {
-      return {
-        messages: [userMessage, buildExecutiveSummary(context, scope)],
-        memory: {
-          topic: "metric_change",
-          metricId,
-          platformId: scopedPlatform,
-          lastTopic: "general_performance",
-        },
-      };
+      return executiveSummaryTurn(userMessage, context, scope, metricId);
     }
     const insight = buildInsightMessage(
       context,

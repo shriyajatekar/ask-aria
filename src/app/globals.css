@@ -2,51 +2,104 @@
 @import "../styles/tokens.css";
 @import "../styles/typography.css";
 
+/* Fonts come from next/font variables on <html>, so they stay inline. */
 @theme inline {
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --font-sans: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+}
 
-  /* Mirrors :root tokens in tokens.css for Tailwind utilities */
-  --color-page: #f7f6f2;
-  --color-background: #f7f6f2;
-  --color-background-secondary: #eef1e9;
-  --color-background-tertiary: #e7e5de;
+/*
+ * Ask Aria — graphite and copper.
+ * Single source for colour, radius and shadow: Tailwind emits these as CSS
+ * variables on :root and as utilities (bg-*, text-*, border-*).
+ * Every text colour meets WCAG AA (4.5:1) on page, surface and tinted fills;
+ * chart colours meet 3:1 for graphics. No green, blue or purple: "up" is ink
+ * with an arrow, "down" is red.
+ */
+@theme {
+  /* Page and surfaces */
+  --color-page: #f4f4f2;
+  --color-background: #f4f4f2;
+  --color-background-secondary: #ecece8;
+  --color-background-tertiary: #e4e4e0;
   --color-surface: #ffffff;
-  --color-surface-hover: #faf9f6;
-  --color-surface-active: #eef1e9;
-  --color-text-primary: #252525;
-  --color-text-secondary: #6f6d67;
-  --color-text-tertiary: #929089;
-  --color-text-disabled: #b5b3ac;
-  --color-text-muted: #929089;
-  --color-border: #e7e5de;
-  --color-border-subtle: #eceae3;
-  --color-border-strong: #d8d6ce;
-  --color-accent-primary: #a8b59a;
-  --color-accent-interactive: #68785d;
-  --color-accent-subtle: #eef1e9;
-  --color-black: #252525;
+  --color-surface-hover: #f8f8f6;
+  --color-surface-active: #efe6dc;
+
+  /* Text (contrast on #ecece8: 15.4 / 7.5 / 5.4) */
+  --color-text-primary: #151515;
+  --color-text-secondary: #4a4a47;
+  --color-text-tertiary: #5f5f5b;
+  --color-text-disabled: #a6a6a2;
+  --color-text-muted: #5f5f5b;
+
+  /* Borders */
+  --color-border: #e2e2df;
+  --color-border-subtle: #eaeae7;
+  --color-border-strong: #cfcfcb;
+
+  /* Accent: copper (5.3:1 on page, white text on it 5.9:1) */
+  --color-accent-primary: #c9a27e;
+  --color-accent-interactive: #8a5a2b;
+  --color-accent-subtle: #efe6dc;
+  --color-primary: #8a5a2b;
+  --color-primary-hover: #6f4721;
+
+  --color-black: #151515;
   --color-white: #ffffff;
-  --color-primary: #68785d;
-  --color-primary-hover: #556450;
-  --color-success: #16a34a;
-  --color-success-subtle: #f0fdf4;
-  --color-warning: #ca8a04;
-  --color-warning-subtle: #fefce8;
-  --color-error: #dc2626;
-  --color-error-subtle: #fef2f2;
-  --color-info: #2563eb;
-  --color-info-subtle: #eff6ff;
-  --color-chart-1: #68785d;
-  --color-chart-2: #a8b59a;
-  --color-chart-3: #6f6d67;
-  --color-chart-4: #929089;
+
+  /* Meaning only. Positive change is ink + ↑, never green. */
+  --color-success: #151515;
+  --color-success-subtle: #ecece8;
+  --color-warning: #8a5a00;
+  --color-warning-subtle: #f6eedf;
+  --color-error: #b42318;
+  --color-error-subtle: #fbecea;
+  --color-info: #3d3d3b;
+  --color-info-subtle: #ecece8;
+
+  /* Charts (3:1+ on white) */
+  --color-chart-1: #8a5a2b;
+  --color-chart-2: #3d3d3b;
+  --color-chart-3: #b0603f;
+  --color-chart-4: #93650f;
+  --color-chart-5: #7a7873;
+  --color-chart-6: #a3804f;
+  --color-chart-neutral: #86847f;
+
+  /* Shape */
   --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 12px;
   --radius-xl: 16px;
-  --shadow-sm: 0 1px 2px rgba(37, 37, 37, 0.04);
-  --shadow-md: 0 4px 12px rgba(37, 37, 37, 0.06);
+  --shadow-sm: 0 1px 2px rgba(21, 21, 21, 0.05);
+  --shadow-md: 0 6px 16px rgba(21, 21, 21, 0.08);
+
+  /* Motion */
+  --animate-enter: aria-enter var(--duration-base) var(--ease-out) both;
+  --animate-panel-in: aria-panel-in var(--duration-slow) var(--ease-out) both;
+}
+
+@keyframes aria-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes aria-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 @layer base {
@@ -78,5 +131,16 @@
 
   :focus:not(:focus-visible) {
     outline: none;
+  }
+
+  /* Respect "reduce motion": no entrance animations or transitions. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }

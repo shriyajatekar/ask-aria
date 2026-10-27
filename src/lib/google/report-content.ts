@@ -6,6 +6,8 @@ import {
   filterPerformanceRecords,
   type DashboardRecordFilters,
 } from "@/lib/dashboard/filter-records";
+import { PRODUCT_BY_ID } from "@/data/products";
+import { analyzeRootCause, type RcaMetricId } from "@/lib/analytics/root-cause";
 import type { DateRange, MetricId, PlatformId } from "@/types/analytics";
 
 const SUMMARY_METRICS: MetricId[] = [
@@ -24,6 +26,8 @@ export interface ReportContentInput {
   comparisonRange?: DateRange;
   brandId?: string | null;
   productId?: string | null;
+  /** When set, the document is a root-cause analysis for this metric. */
+  rcaMetric?: RcaMetricId;
 }
 
 export function buildReportDocumentText(input: ReportContentInput): string {
@@ -65,12 +69,16 @@ export function buildReportDocumentText(input: ReportContentInput): string {
       : null;
     let change = "";
     if (prevVal !== null && prevVal !== 0) {
-      const pct = calculatePercentageChange(prevVal, currentVal);
+      const pct = calculatePercentageChange(currentVal, prevVal);
       change = ` (${pct >= 0 ? "+" : ""}${pct.toFixed(1)}% vs prior period)`;
     }
     lines.push(
       `${metricId.replace(/_/g, " ")}: ${formatMetricValue(metricId, currentVal)}${change}`,
     );
+  }
+
+  if (input.rcaMetric && previous.length) {
+    lines.push("", ...buildRcaSection(input.rcaMetric, current, previous));
   }
 
   lines.push("", "Notes", "────────────────");
@@ -94,4 +102,45 @@ function formatMetricValue(metricId: MetricId, value: number): string {
     return `₹${Math.round(value).toLocaleString("en-IN")}`;
   }
   return Math.round(value).toLocaleString("en-IN");
+}
+
+function buildRcaSection(
+  metric: RcaMetricId,
+  current: Parameters<typeof analyzeRootCause>[1],
+  previous: Parameters<typeof analyzeRootCause>[2],
+): string[] {
+  const rca = analyzeRootCause(metric, current, previous);
+  const fmt = (v: number) =>
+    metric === "roas" ? v.toFixed(2) : `₹${Math.round(v).toLocaleString("en-IN")}`;
+  const pct = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
+  const lines = [
+    "Root-cause analysis",
+    "────────────────",
+    metric === "roas"
+      ? "ROAS = Ad sales per click ÷ Cost per click"
+      : "Gross Sales = Sessions × Conversion rate × Sales per order",
+    `Change: ${fmt(rca.previous)} → ${fmt(rca.current)} (${pct(rca.changePct)})`,
+    "",
+    "Drivers (share of the change)",
+  ];
+  for (const d of rca.drivers) {
+    lines.push(
+      `• ${d.label}: ${pct(d.changePct)} · ${d.sharePct >= 0 ? `${d.sharePct.toFixed(0)}% of the change` : `offset (${Math.abs(d.sharePct).toFixed(0)}% the other way)`}`,
+    );
+  }
+  lines.push("", "Where it happened");
+  for (const p of rca.platforms) {
+    lines.push(`• ${PLATFORM_BY_ID[p.platformId]?.name ?? p.platformId}: ${p.sharePct.toFixed(0)}%`);
+  }
+  for (const p of rca.products) {
+    lines.push(`• ${PRODUCT_BY_ID[p.productId]?.name ?? p.productId}: ${p.sharePct.toFixed(0)}%`);
+  }
+  if (rca.ruledOut.length) {
+    lines.push("", "Ruled out", ...rca.ruledOut.map((r) => `• ${r}`));
+  }
+  if (rca.otherSignals.length) {
+    lines.push("", "Also moved", ...rca.otherSignals.map((r) => `• ${r}`));
+  }
+  lines.push("", `Confidence: ${rca.confidence}. ${rca.confidenceReason}`);
+  return lines;
 }

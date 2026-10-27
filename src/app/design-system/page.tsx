@@ -13,16 +13,14 @@ export default function DesignSystemPage() {
               href="/"
               className="type-body-medium text-text-primary hover:text-text-secondary"
             >
-              Commerce Intelligence
+              Ask Aria
             </Link>
             <span className="text-border-strong">/</span>
             <span className="type-body text-text-secondary">Design system</span>
           </div>
-          <Link href="/">
-            <Button variant="tertiary" size="sm">
-              Back
-            </Button>
-          </Link>
+          <Button asChild variant="tertiary" size="sm">
+            <Link href="/">Back</Link>
+          </Button>
         </div>
       </header>
 

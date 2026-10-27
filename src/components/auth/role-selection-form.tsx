@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { BarChart3, BriefcaseBusiness, Building2 } from "lucide-react";
 
 import {
@@ -14,6 +14,8 @@ import {
 import { useAuth } from "@/contexts/auth-provider";
 import { readPendingSignup } from "@/lib/auth/storage";
 import type { UserRole } from "@/lib/auth/types";
+
+const subscribeNever = () => () => {};
 
 const ROLE_OPTIONS: {
   role: UserRole;
@@ -50,16 +52,22 @@ export function RoleSelectionForm() {
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [ready, setReady] = useState(false);
+  // The pending sign-up lives in browser storage, which the server can't
+  // read: render "Loading…" on the server, the real answer in the browser.
+  const ready = useSyncExternalStore(
+    subscribeNever,
+    () => readPendingSignup() !== null,
+    () => false,
+  );
+  const checked = useSyncExternalStore(
+    subscribeNever,
+    () => true,
+    () => false,
+  );
 
   useEffect(() => {
-    const pending = readPendingSignup();
-    if (!pending) {
-      router.replace("/sign-up");
-      return;
-    }
-    setReady(true);
-  }, [router]);
+    if (checked && !ready) router.replace("/sign-up");
+  }, [checked, ready, router]);
 
   async function handleContinue() {
     if (!selectedRole) {
