@@ -28,6 +28,7 @@ import {
   processAskAriaMessage,
 } from "./ask-aria-intelligence";
 import { classifyIntent } from "./ask-aria-intent";
+import { translateHinglish } from "./ask-aria-hinglish";
 import { understandWithAi } from "./ask-aria-ai-client";
 import { METRIC_BY_ID } from "@/data/metrics";
 import {
@@ -543,7 +544,7 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
     // is the AI asked to map it onto a question Aria knows; if the AI is off
     // or fails, the rules' honest "I'm not sure" reply stands.
     let result = run(text);
-    if (classifyIntent(text, memory, contextForTurn) === "unknown") {
+    if (classifyIntent(translateHinglish(text) ?? text, memory, contextForTurn) === "unknown") {
       setInputValue("");
       const understood = await understandWithAi(text);
       // Log questions neither the rules nor the AI could read.

@@ -64,6 +64,7 @@ import {
   metricDefinitionTerm,
 } from "./ask-aria-intent";
 import { goldenPathChips } from "./ask-aria-golden-path";
+import { translateHinglish } from "./ask-aria-hinglish";
 import { buildSituationMessage, describePastEpisode } from "./ask-aria-situations";
 import { buildOutcomeMessage } from "./ask-aria-outcomes";
 import type { TrackedAction } from "@/lib/analytics/outcomes";
@@ -1701,20 +1702,34 @@ export function processAskAriaMessage(
   messages: AskAriaMessage[];
   memory: AskAriaInvestigationMemory;
 } {
+  // Hinglish: answer the English question it maps to, keep the user's own
+  // words in their bubble, and show how Aria read it.
+  const translated = translateHinglish(text);
   const result = routeAskAriaMessage(
-    text,
+    translated ?? text,
     context,
     memory,
     role,
     workspaceConnection,
     options,
   );
-  return {
-    ...result,
-    messages: result.messages.map((message) =>
-      attachSource(message, context, result.memory),
-    ),
-  };
+  let messages = result.messages.map((message) =>
+    attachSource(message, context, result.memory),
+  );
+  if (translated && messages[0]?.kind === "user") {
+    const [userMessage, ...replies] = messages;
+    messages = [
+      { ...userMessage, text: text.trim() },
+      {
+        id: createMessageId(),
+        kind: "assistant_text",
+        text: `I read this as: “${translated}”`,
+        createdAt: Date.now(),
+      },
+      ...replies,
+    ];
+  }
+  return { ...result, messages };
 }
 
 function routeAskAriaMessage(

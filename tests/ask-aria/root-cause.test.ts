@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import type { PerformanceRecord } from "@/types/analytics";
+
 import { PERFORMANCE_RECORDS } from "@/data/performance";
 import { aggregateMetric } from "@/lib/analytics/comparisons";
 import { analyzeRootCause, groupContributions } from "@/lib/analytics/root-cause";
@@ -72,7 +74,7 @@ describe("root-cause wording", () => {
         brandId: "b",
         productId: "p",
         metrics: { sessions, orders, gross_sales: sales, ad_sales: 0, ad_spend: 0, ad_clicks: 0 },
-      }) as unknown as (typeof current)[number];
+      }) as unknown as PerformanceRecord;
     const previous = [record("2026-01-01", 1000, 100, 10000)];
     const current = [record("2026-01-08", 1400, 77, 7700)];
     const rca = analyzeRootCause("gross_sales", current, previous);
