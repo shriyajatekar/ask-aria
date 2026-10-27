@@ -52,21 +52,32 @@ The design decisions:
   - follow-ups that keep context
   - report, spreadsheet and email drafts with confirm-before-send
   - monitors (simulated)
+- **Root-cause analysis**: a driver tree (Gross Sales = sessions × conversion × sales per order; ROAS = sales per click ÷ cost per click) that splits a change exactly between drivers, traces it to platforms and products, lists what was ruled out, and states its confidence. Exportable as a report.
+- **Situation alerts** in the notification bell and the chat: material drops, what happened the last time something similar happened in the data (and how it recovered), and a suggested next step. When there is no precedent, Aria says so.
+- **Risky-bid warning**: a bid change (for example ₹5 at 11:50 PM) is checked against the last 7 days before you confirm.
+- **Team actions**: Slack or Teams post, calendar invite, Jira or Asana task, weekly digest, all previewed and simulated.
+- **AI understanding fallback** (OpenAI, optional): only for questions the rules can't read; the model picks from a fixed menu and never writes answers or numbers.
 - A **Design notes** toggle that labels each answer with the principles it shows, so a reviewer can check the design against the live demo.
+- A **graphite and copper** visual system: IBM Plex type, WCAG AA text contrast everywhere, chart colours at 3:1, calm motion that turns off for reduced-motion users.
 - A public **design system** page.
-- **37 automated tests** covering question routing, follow-up context, the "say when uncertain" behaviour, the source line on every answer, answer wording, the golden path, and the Google demo-only switch.
+- **80 automated tests** covering question routing, follow-up context, the "say when uncertain" behaviour, the source line on every answer, answer wording, the golden path, the Google demo-only switch, the root-cause maths (parts add up to the whole), alerts, bid risk, team actions, the AI fallback and its rate limits, and colour contrast.
 
 ## 5. How it works (plain language)
 
 1. **Understanding the question.** Aria reads the question and matches it to one of about 20 question types, such as "why did X change", "compare platforms" or "draft an email". It uses keywords plus what was discussed earlier in the conversation. This is rules, not an AI model.
 2. **Remembering the conversation.** After each answer, Aria remembers the metric, platform, brand and period it talked about. That's why "Why?" or "What about Flipkart?" works without repeating everything.
 3. **Answering.** Aria calculates the numbers from the synthetic dataset for the exact periods compared. It writes the answer from a template that puts the finding first, then attaches the source line.
-4. **Checking itself.** Before answering a "why did X drop?" question, Aria checks whether X actually dropped. If not, it says so. If a change is under 1%, it says the change is too small to explain.
-5. **Actions.** Drafts are always shown for review first. On the public site, confirming an action shows a labelled simulation ("Demo only: nothing was actually sent"). Real Google Docs, Sheets and Gmail can only be switched on deliberately, on the server, with `ASK_ARIA_LIVE_GOOGLE=true` plus Google keys. Keys never reach the browser.
+4. **Root cause.** For "why" questions that need depth, Aria breaks the metric into the parts that multiply to make it and measures how much of the change each part explains. The parts always add up exactly to the total change.
+5. **Alerts.** Aria scans each platform for material drops, looks back through the history for the last similar drop, and checks what changed when it recovered, using the same root-cause method.
+6. **Checking itself.** Before answering a "why did X drop?" question, Aria checks whether X actually dropped. If not, it says so. If a change is under 1%, it says the change is too small to explain.
+7. **Actions.** Drafts are always shown for review first. On the public site, confirming an action shows a labelled simulation ("Demo only: nothing was actually sent"). Real Google Docs, Sheets and Gmail can only be switched on deliberately, on the server, with `ASK_ARIA_LIVE_GOOGLE=true` plus Google keys. Keys never reach the browser.
 
 ## 6. Honest limits
 
-- **Not AI.** Answers are rule-based and templated over synthetic data. The demo tests the *conversation design*, not a language model. A production version would need a model behind the same answer structure, with its keys on the server, a fallback to the scripted answers when it's down, and a spending cap.
+- **Answers are not AI-generated.** They are calculated and templated from synthetic data. An optional OpenAI model only maps unusual phrasing onto Aria's question types. Its usage limits are kept in server memory per running instance, so the real spending ceiling must be set as a monthly budget in the OpenAI project. The default model name (`gpt-4o-mini`) should be checked against OpenAI's current list.
+- **Root cause is arithmetic, not causation.** The driver tree shows which parts of the formula moved, not why customers behaved differently. Stock and Buy Box are shown as "also moved" signals, not proven causes.
+- **Alerts and past playbooks come from about 10 weeks of synthetic data,** so precedents are few and sometimes much smaller than today's drop (Aria says so).
+- **Bid checks use daily data only.** There is no hourly data, so Aria makes no claims about late-night traffic, and no real current bids are stored; it compares against the actual cost per click.
 - **Synthetic data, about 10 weeks** (2 Dec 2025 – 15 Feb 2026). Patterns in it were designed for the demo, and Aria says when the history is too short to judge.
 - **Never tested with real users.** There are no usage numbers or research results from this demo.
 - **Time saved is an estimate, not a result.** "20–25 minutes to under a minute" was the goal I estimated for the original concept. Nothing in this demo measures it.
@@ -89,6 +100,9 @@ Record at 1440×900 (desktop) and 390×844 (phone), with **Design notes** on for
 | 7 | KAM path, steps 1→4 | Role-specific answer → draft → confirm send | 30–40 s screen recording |
 | 8 | CXO path on a phone | Biggest risk → why → guardrail | 20–30 s phone recording |
 | 9 | Side by side: same question as Analyst vs CXO | Role-based depth | Still (two panels) |
-| 10 | Design system page | Tokens and components behind the UI | Still |
+| 10 | Design system page | Colours with contrast ratios, chart palette, motion | Still |
+| 11 | RCA card, Design notes on | Driver tree waterfall, where it happened, ruled out, confidence | Still (hero 2) |
+| 12 | Notification bell open, then the alert card | Situation, what happened last time, suggestion | Still pair |
+| 13 | ₹5 bid at 11:50 PM | Risk warning before confirm, "Confirm anyway" | 15 s screen recording |
 
 Caption every image "Synthetic data". Don't caption any time saving as a result.
