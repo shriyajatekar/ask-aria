@@ -66,15 +66,23 @@ export function DashboardAppShell({ children }: { children: ReactNode }) {
           <div className="flex h-14 items-center gap-2 px-4 lg:gap-4 lg:px-6">
             <DashboardMobileNavDrawer />
             <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1.5 gap-y-0 sm:items-center sm:gap-3">
-              <div className="min-w-0">
-                <span className="type-body-medium whitespace-nowrap text-text-primary">
+              {/* Page heading. On phones the label stacks under the name
+                  instead of wrapping over three lines. */}
+              <h1 className="flex min-w-0 flex-col leading-tight sm:block">
+                <span className="type-body-medium truncate whitespace-nowrap text-text-primary max-sm:text-[14px]">
                   Commerce Intelligence
                 </span>
-                <span className="type-small text-text-tertiary">
-                  {" "}
-                  · CONCEPTUAL CASE STUDY
+                <span className="type-small whitespace-nowrap text-text-tertiary max-sm:text-[11px]">
+                  <span className="hidden sm:inline"> · </span>
+                  CONCEPTUAL CASE STUDY
                 </span>
-              </div>
+                {user ? (
+                  <span className="sr-only">
+                    {" "}
+                    — {getRoleLabel(user.role)} dashboard
+                  </span>
+                ) : null}
+              </h1>
               <span className="hidden h-4 w-px bg-border md:block" />
               {user ? (
                 <span className="hidden type-small text-text-secondary md:inline">

@@ -16,8 +16,8 @@
 
   /* Text */
   --color-text-primary: #252525;
-  --color-text-secondary: #6f6d67;
-  --color-text-tertiary: #929089;
+  --color-text-secondary: #5c5a55;
+  --color-text-tertiary: #6d6c66; /* 4.6:1 on background-secondary (WCAG AA) */
   --color-text-disabled: #b5b3ac;
   --color-text-muted: #929089;
 
