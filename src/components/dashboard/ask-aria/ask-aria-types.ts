@@ -27,6 +27,8 @@ export type AskAriaActionType =
   | "send_email"
   | "create_task"
   | "share_slack"
+  | "calendar_invite"
+  | "weekly_digest"
   | "investigate_anomaly";
 
 export type AskAriaActionStatus =
@@ -83,6 +85,20 @@ export interface AskAriaActionDraft {
   emailArtifactUrl?: string;
   emailArtifactKind?: "doc" | "sheet";
   emailPreviewLines?: string[];
+  /**
+   * Team actions (Slack/Teams post, calendar invite, Jira/Asana task, weekly
+   * digest). Always simulated: no live integration exists for these.
+   */
+  collab?: {
+    /** "Slack", "Microsoft Teams", "Google Calendar", "Jira", "Asana", "Email digest" */
+    tool: string;
+    /** Channel, attendees, assignee or recipients. */
+    target: string;
+    title: string;
+    /** When it happens: meeting time, due date or digest schedule. */
+    when?: string;
+    bodyLines: string[];
+  };
   gmailMessageId?: string;
   spreadsheetTitle?: string;
   spreadsheetRowCount?: number;

@@ -34,6 +34,7 @@ import {
   parseMonitorAction,
   tryRefineMonitorDraft,
 } from "./ask-aria-monitor-draft";
+import { collabResult, detectCollabAction, isCollabAction } from "./ask-aria-collab-actions";
 import { createMessageId } from "./ask-aria-storage";
 import { destinationForAction } from "./ask-aria-tool-mapping";
 
@@ -192,6 +193,7 @@ export function looksLikeActionSpecification(text: string): boolean {
         lower.includes("team"))) ||
     (lower.includes("draft") && lower.includes("email")) ||
     isEmailVerbRequest(text) ||
+    detectCollabAction(text) !== null ||
     isClientUpdateRequest(text) ||
     lower.includes("confirm send") ||
     /\bset\s+.+\s+bid\b/i.test(text)
@@ -340,6 +342,12 @@ export function parseActionRequest(
 
   if (!looksLikeActionSpecification(text)) {
     return { kind: "none" };
+  }
+
+  // Team actions (Slack/Teams, calendar, Jira/Asana, weekly digest).
+  const collabType = detectCollabAction(text);
+  if (collabType) {
+    return { kind: "ready", partial: { type: collabType } };
   }
 
   const isSpreadsheet =
@@ -752,6 +760,7 @@ export function buildActionDraft(
     reportPeriodLabel: partial.reportPeriodLabel,
     reportPlatformScope: partial.reportPlatformScope,
     reportRcaMetric: partial.reportRcaMetric,
+    collab: partial.collab,
     keywordsPausedCount: partial.keywordsPausedCount,
     categoryLabel: partial.categoryLabel,
     reallocateAmount: partial.reallocateAmount,
@@ -862,6 +871,7 @@ export function validateActionDraft(draft: AskAriaActionDraft): string | null {
 }
 
 export function actionPreviewTitle(draft: AskAriaActionDraft): string {
+  if (draft.collab) return draft.collab.title;
   switch (draft.type) {
     case "campaign_bid":
     case "schedule_bid_change":
@@ -907,6 +917,20 @@ export function actionPreviewRows(
   const platform = draft.platformId
     ? PLATFORM_BY_ID[draft.platformId]?.name ?? "—"
     : "—";
+
+  if (draft.collab) {
+    const targetLabel: Record<string, string> = {
+      share_slack: "Channel",
+      calendar_invite: "Attendees",
+      create_task: "Assignee",
+      weekly_digest: "Recipients",
+    };
+    return [
+      { label: "Tool", value: `${draft.collab.tool} (simulated)` },
+      { label: targetLabel[draft.type] ?? "To", value: draft.collab.target },
+      ...(draft.collab.when ? [{ label: "When", value: draft.collab.when }] : []),
+    ];
+  }
 
   if (draft.type === "generate_report" || draft.type === "schedule_report") {
     return [
@@ -1119,6 +1143,19 @@ export function mockExecuteAction(draft: AskAriaActionDraft): AskAriaMessage {
     ? PLATFORM_BY_ID[draft.platformId]?.name
     : undefined;
   const target = draft.campaignName ?? draft.productName ?? "Target";
+
+  if (isCollabAction(draft.type)) {
+    const result = collabResult(draft);
+    return {
+      id: createMessageId(),
+      kind: "action_result",
+      draft,
+      status: "completed",
+      message: result.message,
+      detailLines: result.detailLines,
+      createdAt: Date.now(),
+    };
+  }
 
   if (draft.type === "generate_report" || draft.type === "schedule_report") {
     const title = draft.reportTitle ?? "Commerce analysis report";

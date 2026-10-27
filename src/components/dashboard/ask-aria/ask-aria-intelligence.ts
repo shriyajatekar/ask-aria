@@ -60,6 +60,7 @@ import {
 } from "./ask-aria-intent";
 import { goldenPathChips } from "./ask-aria-golden-path";
 import { buildSituationMessage } from "./ask-aria-situations";
+import { buildCollabDraftPartial, isCollabAction } from "./ask-aria-collab-actions";
 import {
   buildHistoricalSectionLines,
   findHistoricalMetricDeclines,
@@ -1399,7 +1400,7 @@ function buildCapabilityDiscoveryResponse(): AskAriaMessage {
     id: createMessageId(),
     kind: "assistant_text",
     text:
-      "I help you understand commerce performance, create Google Docs and Sheets, draft and send Gmail, set simulated monitors, and prepare campaign actions — all from this conversation.",
+      "I explain why numbers moved (including a root-cause analysis), flag what needs attention with what happened last time, and turn findings into actions: Docs and Sheets reports, email, Slack or Teams posts, calendar invites, Jira or Asana tasks, a weekly digest, monitors and bid changes. Every action is previewed for you to confirm, and on this demo site they are simulated.",
     suggestionChips: CAPABILITY_DISCOVERY_CHIPS.map((chip) => ({
       label: chip.group,
       prompt: chip.prompt,
@@ -1871,6 +1872,17 @@ function routeAskAriaMessage(
         isClientUpdateDraftPartial(partial)
           ? enrichClientUpdateDraft(partial, context, enrichOptions)
           : enrichEmailDraft(partial, context, enrichOptions);
+    }
+
+    if (partial.type && isCollabAction(partial.type)) {
+      partial = {
+        ...partial,
+        ...buildCollabDraftPartial(partial.type, trimmed, {
+          context,
+          role,
+          messages: recentMessages,
+        }),
+      };
     }
 
     const draft = withBidRisk(buildActionDraft(partial));

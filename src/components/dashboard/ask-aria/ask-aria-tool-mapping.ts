@@ -31,7 +31,6 @@ const ACTION_TOOL_REQUIREMENTS = new Set<AskAriaActionType>([
   "draft_email",
   "send_email",
   "create_presentation",
-  "create_task",
 ]);
 
 export function actionRequiresWorkspaceTool(type: AskAriaActionType): boolean {

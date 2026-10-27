@@ -32,20 +32,22 @@ export const ARIA_COMMAND_CENTER_SECTIONS: CommandCenterSection[] = [
     id: "communicate",
     label: "Communicate",
     description:
-      "Draft or send team updates grounded in the conversation context.",
+      "Share findings by email, Slack or Teams, or book a review — always previewed first.",
     examples: [
       "Draft an email to the KAM team with this insight",
-      "Email it to leadership",
+      "Share this on Slack",
+      "Schedule a review with the client tomorrow at 3pm",
     ],
   },
   {
     id: "monitor",
     label: "Monitor",
     description:
-      "Set simulated alerts on key metrics and review what is already monitored.",
+      "See what needs attention, set simulated alerts, or get a weekly digest.",
     examples: [
-      "What's being monitored?",
+      "What needs my attention?",
       "Monitor Amazon ROAS and alert me if it falls below 3",
+      "Send me a weekly digest",
     ],
   },
   {
@@ -56,6 +58,7 @@ export const ARIA_COMMAND_CENTER_SECTIONS: CommandCenterSection[] = [
     examples: [
       "Set Campaign X bid to ₹14 tonight at 11:50 PM",
       "Pause underperforming keywords on Amazon",
+      "Create a Jira task for this",
     ],
   },
 ];

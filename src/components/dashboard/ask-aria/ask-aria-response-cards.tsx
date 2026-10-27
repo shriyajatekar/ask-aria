@@ -316,6 +316,11 @@ function AskAriaMessageCard({
             ) : null}
           </div>
         ) : null}
+        {draft.collab?.bodyLines.length ? (
+          <div className="mt-3 rounded-md bg-background-secondary px-3 py-2 type-small text-text-secondary whitespace-pre-line">
+            {draft.collab.bodyLines.join("\n")}
+          </div>
+        ) : null}
         {draft.emailPreviewLines?.length ? (
           <div className="mt-3 rounded-md bg-background-secondary px-3 py-2 type-small text-text-secondary whitespace-pre-line">
             {draft.emailPreviewLines.join("\n")}

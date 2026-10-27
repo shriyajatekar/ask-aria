@@ -49,22 +49,6 @@ function isWhatsAppQuery(text: string): boolean {
   return lower.includes("whatsapp") || lower.includes("whats app");
 }
 
-function isSlackOrTeamsShareQuery(text: string): boolean {
-  const lower = text.toLowerCase();
-  if (!/\b(slack|teams)\b/.test(lower)) return false;
-  return (
-    lower.includes("share") ||
-    lower.includes("post") ||
-    lower.includes("send") ||
-    lower.includes("notify")
-  );
-}
-
-function isJiraTaskQuery(text: string): boolean {
-  const lower = text.toLowerCase();
-  return lower.includes("jira") && (lower.includes("task") || lower.includes("ticket"));
-}
-
 function isCompetitorPricingQuery(text: string): boolean {
   const lower = text.toLowerCase();
   return (
@@ -228,38 +212,6 @@ export function buildClarificationResponse(text: string): AskAriaMessage | null 
         label: "Draft email to the team",
         followUpText: "Draft an email to the KAM team with this insight",
       },
-    );
-  }
-
-  if (isSlackOrTeamsShareQuery(trimmed)) {
-    const channel = trimmed.toLowerCase().includes("teams")
-      ? "Microsoft Teams"
-      : "Slack";
-    return clarificationMessage(
-      "integration_not_connected",
-      "Integration not connected",
-      `${channel} isn't connected in this demo workspace.\n\nI can prepare a shareable report or email instead.`,
-      [],
-      "Try an alternative?",
-      {
-        label: "Create a performance report",
-        followUpText: "Create today's performance report",
-      },
-    );
-  }
-
-  if (isJiraTaskQuery(trimmed)) {
-    return clarificationMessage(
-      "integration_not_connected",
-      "Integration not connected",
-      "Jira isn't connected in this workspace.\n\nConnect workflow tools from Connected tools to simulate task creation.",
-      [
-        {
-          label: "Open Connected tools",
-          followUpText: "",
-          action: "open_tools_sheet",
-        },
-      ],
     );
   }
 
