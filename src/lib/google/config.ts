@@ -5,10 +5,20 @@ export function getGoogleRedirectUri(): string {
   );
 }
 
+/**
+ * Live Google (real Docs, Sheets and Gmail sends) is opt-in. The public demo
+ * runs without it: every Google route answers NOT_CONFIGURED and Aria shows
+ * clearly labelled simulated results. Set ASK_ARIA_LIVE_GOOGLE=true plus the
+ * OAuth keys on a private deployment to turn it on.
+ */
+export function isLiveGoogleEnabled(): boolean {
+  return process.env.ASK_ARIA_LIVE_GOOGLE?.trim().toLowerCase() === "true";
+}
+
 export function isGoogleOAuthConfigured(): boolean {
   const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
-  return Boolean(clientId && clientSecret);
+  return isLiveGoogleEnabled() && Boolean(clientId && clientSecret);
 }
 
 export function getGoogleOAuthConfig(): {
@@ -24,7 +34,7 @@ export function getGoogleOAuthConfig(): {
     clientId,
     clientSecret,
     redirectUri,
-    configured: Boolean(clientId && clientSecret),
+    configured: isGoogleOAuthConfigured(),
   };
 }
 

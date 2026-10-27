@@ -1128,7 +1128,7 @@ export function mockExecuteAction(draft: AskAriaActionDraft): AskAriaMessage {
       status: "completed",
       message: "Report generated (demo)",
       detailLines: [
-        `${title} is ready in ${draft.workspaceDestination ?? "Google Docs"} (simulated — connect Google OAuth for a real Doc).`,
+        `${title} would be created in ${draft.workspaceDestination ?? "Google Docs"}. Demo only: no real document was created.`,
       ],
       ctaLabel: "Open report",
       secondaryCtaLabel: "Share",
@@ -1147,7 +1147,7 @@ export function mockExecuteAction(draft: AskAriaActionDraft): AskAriaMessage {
       status: "completed",
       message: "Spreadsheet created (demo)",
       detailLines: [
-        `${rows} rows would export to ${draft.workspaceDestination ?? "Google Sheets"} (simulated — connect Google Sheets OAuth for a real file).`,
+        `${rows} rows would export to ${draft.workspaceDestination ?? "Google Sheets"}. Demo only: no real file was created.`,
       ],
       ctaLabel: "Open spreadsheet",
       secondaryCtaDisabled: true,
@@ -1176,10 +1176,10 @@ export function mockExecuteAction(draft: AskAriaActionDraft): AskAriaMessage {
       kind: "action_result",
       draft,
       status: "completed",
-      message: `Email sent to ${draft.emailRecipients ?? "recipients"}.`,
+      message: `Email to ${draft.emailRecipients ?? "recipients"} (demo)`,
       detailLines: [
         `Subject: ${draft.emailSubject ?? "—"}`,
-        "Delivery simulated for this demo workspace.",
+        "Demo only: nothing was actually sent.",
       ],
       createdAt: Date.now(),
     };
