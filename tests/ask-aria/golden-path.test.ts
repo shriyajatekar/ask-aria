@@ -42,6 +42,12 @@ describe("golden path", () => {
     expect(titleOf(brands.reply[0])).toMatch(/brands/i);
     expect(titleOf(why.reply[0])).toContain(brands.memory.lastBrandName as string);
     expect(draft.reply[0].kind).toBe("action_preview");
+    if (draft.reply[0].kind === "action_preview") {
+      // The client email is about the brand the thread discussed.
+      const brand = brands.memory.lastBrandName as string;
+      expect(draft.reply[0].draft.emailSubject).toContain(brand);
+      expect(draft.reply[0].draft.emailPreviewLines?.join("\n")).toContain(brand);
+    }
     expect(send.reply[0].kind).toBe("action_preview");
     expect(principlesForMessage(send.reply[0])).toContain("confirm_before_action");
   });

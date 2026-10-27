@@ -227,14 +227,11 @@ function insightSummaryForClientUpdate(
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const message = messages[i];
     if (message.kind === "insight") {
-      const direction = ctx?.metricDirection;
-      const directionPhrase =
-        direction === "down"
-          ? "declined"
-          : direction === "up"
-            ? "improved"
-            : "shifted";
-      return `${metricLabel} ${directionPhrase} versus the comparison period on ${scopeLabel}. ${message.summary}`;
+      // Answers already lead with the finding; prefix the brand when the
+      // thread was about one, so the client email names their account.
+      return memory.lastBrandName
+        ? `${memory.lastBrandName}: ${message.summary}`
+        : message.summary;
     }
     if (message.kind === "recommendation") {
       return `${metricLabel} on ${scopeLabel}: ${message.observation}`;
@@ -293,9 +290,12 @@ export function enrichClientUpdateDraft(
     ? insightSummaryForClientUpdate(options.messages, options.memory)
     : undefined;
 
+  const brandName = options?.memory?.lastBrandName;
   const emailSubject =
     partial.emailSubject?.trim() ||
-    defaultClientUpdateSubject(contextForEmail);
+    (brandName
+      ? `Performance update — ${brandName}`
+      : defaultClientUpdateSubject(contextForEmail));
   const emailPreviewLines = buildClientUpdateBodyLines({
     subject: emailSubject,
     recipientLabel: partial.emailRecipients ?? group?.label,
@@ -1041,7 +1041,7 @@ export function actionConfirmedMessage(draft: AskAriaActionDraft): string {
     return `${ARIA_STATUS_LABEL.preparing} report.`;
   }
   if (draft.type === "send_email") {
-    return `Ready to send this. ${ARIA_STATUS_LABEL.executing} via Gmail…`;
+    return `Confirmed. ${ARIA_STATUS_LABEL.executing}…`;
   }
   if (draft.type === "create_spreadsheet") {
     return "Ready to create this.";
@@ -1164,7 +1164,7 @@ export function mockExecuteAction(draft: AskAriaActionDraft): AskAriaMessage {
       status: "completed",
       message: "Email draft ready for review",
       detailLines: [
-        "Nothing was sent — confirm when you're ready to deliver via Gmail.",
+        "Nothing was sent. Review it, then confirm to send.",
       ],
       createdAt: Date.now(),
     };
@@ -1176,7 +1176,7 @@ export function mockExecuteAction(draft: AskAriaActionDraft): AskAriaMessage {
       kind: "action_result",
       draft,
       status: "completed",
-      message: `Email to ${draft.emailRecipients ?? "recipients"} (demo)`,
+      message: `Simulated email to ${draft.emailRecipients ?? "recipients"}`,
       detailLines: [
         `Subject: ${draft.emailSubject ?? "—"}`,
         "Demo only: nothing was actually sent.",

@@ -39,4 +39,4 @@ export function getGoogleOAuthConfig(): {
 }
 
 export const GOOGLE_OAUTH_MISSING_MESSAGE =
-  "Google Workspace OAuth is not configured. Add GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_REDIRECT_URI to your server environment (see .env.example).";
+  "Live Google is off (demo mode): actions are simulated. To enable it on a private deployment, set ASK_ARIA_LIVE_GOOGLE=true plus GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_REDIRECT_URI (see .env.example).";

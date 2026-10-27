@@ -57,7 +57,7 @@ export function actionPreviewSubtitle(draft: AskAriaActionDraft): string {
     return "Ready to create — confirm to proceed.";
   }
   if (draft.type === "send_email") {
-    return "Ready to send — confirm to deliver via Gmail.";
+    return "Ready to send. Nothing goes out until you confirm.";
   }
   if (
     draft.type === "campaign_bid" ||

@@ -596,7 +596,7 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
               id: createMessageId(),
               kind: "assistant_text",
               text:
-                "This is a draft for review only. Use Send or confirm send when you're ready to deliver via Gmail.",
+                "This is a draft for review only. Say \"Send this\" when you're ready, and confirm before it goes out.",
               createdAt: Date.now(),
             },
           ],

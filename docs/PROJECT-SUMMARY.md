@@ -54,7 +54,7 @@ The design decisions:
   - monitors (simulated)
 - A **Design notes** toggle that labels each answer with the principles it shows, so a reviewer can check the design against the live demo.
 - A public **design system** page.
-- **36 automated tests** covering question routing, follow-up context, the "say when uncertain" behaviour, the source line on every answer, answer wording, the golden path, and the Google demo-only switch.
+- **37 automated tests** covering question routing, follow-up context, the "say when uncertain" behaviour, the source line on every answer, answer wording, the golden path, and the Google demo-only switch.
 
 ## 5. How it works (plain language)
 
