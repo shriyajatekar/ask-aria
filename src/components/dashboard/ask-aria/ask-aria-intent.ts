@@ -19,6 +19,7 @@ export type AskAriaIntent =
   | "action_clarification"
   | "temporal_follow_up"
   | "product_analysis"
+  | "product_ranking"
   | "brand_analysis"
   | "platform_analysis"
   | "platform_summary"
@@ -253,10 +254,19 @@ function isRecommendationQuery(text: string): boolean {
   );
 }
 
+export function isProductRankingQuery(text: string): boolean {
+  const lower = text.toLowerCase();
+  if (lower.includes("caused") || lower.includes("affect")) return false;
+  return (
+    /\b(top|best|worst|bottom|leading)\b.*\b(products?|skus?)\b/.test(lower) ||
+    /\b(products?|skus?)\b.*\b(selling|performing) (best|worst)\b/.test(lower)
+  );
+}
+
 function isRootCauseQuery(text: string): boolean {
   const lower = text.toLowerCase();
   return (
-    lower.includes("why ") ||
+    /\bwhy\b/.test(lower) ||
     lower.includes("why did") ||
     (lower.includes("decline") && !lower.includes("when did")) ||
     (lower.includes("what happened") && !isTemporalQuery(text)) ||
@@ -319,11 +329,18 @@ export function classifyIntent(
     return "action_request";
   }
 
+  // Executive questions often name a period ("this month") without asking
+  // for a date window, so they win over temporal routing.
+  if (isExecutiveQuery(trimmed)) {
+    return "executive_summary";
+  }
+
   if (isTemporalQuery(trimmed)) {
-    if (hasActiveInvestigation(memory, context) || isFollowUpReference(trimmed)) {
-      return "temporal_follow_up";
-    }
     return "temporal_follow_up";
+  }
+
+  if (isProductRankingQuery(trimmed)) {
+    return "product_ranking";
   }
 
   if (

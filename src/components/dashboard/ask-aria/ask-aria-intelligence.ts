@@ -230,7 +230,14 @@ function resolveFocusMetric(
 
 function resolveTemporalWindow(text: string): AskAriaTemporalWindow {
   const lower = text.toLowerCase();
-  if (lower.includes("last 30") || lower.includes("30 day")) return "last_30_days";
+  if (
+    lower.includes("last 30") ||
+    lower.includes("30 day") ||
+    lower.includes("this month")
+  ) {
+    return "last_30_days";
+  }
+  if (lower.includes("weekend")) return "weekend";
   if (lower.includes("last 7") || lower.includes("7 day")) return "last_7_days";
   if (lower.includes("previous week") || lower.includes("last week")) {
     return "previous_week";
@@ -243,7 +250,7 @@ function buildBrandAnalysisMessage(
   context: AskAriaFullContext,
   role: UserRole,
   scope: ResolvedQueryScope,
-): AskAriaMessage {
+): { message: AskAriaMessage; weakest?: { brandId: string; brandName: string } } {
   const { current, comparison } = filterForScope(context, scope);
   const rows = BRANDS.map((brand) => {
     const curRecords = current.filter((record) => record.brandId === brand.id);
@@ -261,14 +268,29 @@ function buildBrandAnalysisMessage(
   }).sort((a, b) => a.pct - b.pct);
 
   const formatted = formatBrandAnalysis(role, rows);
+  const weakest = rows[0] && rows[0].pct < 0 ? rows[0] : undefined;
 
   return {
-    id: createMessageId(),
-    kind: "insight",
-    title: formatted.title,
-    summary: formatted.summary,
-    sections: prependAnalysisSections(context, scope, formatted.sections),
-    createdAt: Date.now(),
+    message: {
+      id: createMessageId(),
+      kind: "insight",
+      title: formatted.title,
+      summary: formatted.summary,
+      sections: prependAnalysisSections(context, scope, formatted.sections),
+      createdAt: Date.now(),
+    },
+    weakest: weakest
+      ? { brandId: weakest.brandId, brandName: weakest.brandName }
+      : undefined,
+  };
+}
+
+function singlePlatformScope(platformId: PlatformId): ResolvedQueryScope {
+  return {
+    mode: "single_platform",
+    platformIds: [platformId],
+    scopeLabel: PLATFORM_BY_ID[platformId]?.name ?? platformId,
+    usedDashboardDefault: false,
   };
 }
 
@@ -721,6 +743,15 @@ function buildTemporalMessage(
     baselineEnd = clampDate(addDays(rangeStart, -1));
     baselineStart = clampDate(addDays(baselineEnd, -6));
     title = `Previous week — ${formatDisplayDate(rangeStart)} to ${formatDisplayDate(rangeEnd)}`;
+  } else if (window === "weekend") {
+    // Latest Saturday–Sunday in the dataset vs the weekend before it
+    // (same number of days, so totals compare fairly).
+    const endDay = new Date(`${end}T00:00:00.000Z`).getUTCDay();
+    rangeEnd = addDays(end, endDay === 0 ? 0 : -endDay);
+    rangeStart = addDays(rangeEnd, -1);
+    baselineEnd = addDays(rangeEnd, -7);
+    baselineStart = addDays(rangeStart, -7);
+    title = `Weekend — ${formatDisplayDate(rangeStart)} to ${formatDisplayDate(rangeEnd)} vs the weekend before`;
   } else if (window === "decline_onset") {
     return buildDeclineOnsetMessage(context, focusMetric, scope);
   } else {
@@ -919,29 +950,141 @@ function buildRecommendation(
 function buildExecutiveSummary(
   context: AskAriaFullContext,
   scope: ResolvedQueryScope,
-): AskAriaMessage {
-  const { current, comparison } = filterForScope(context, scope);
+): { message: AskAriaMessage; riskPlatformId?: PlatformId } {
+  const { current, comparison, selectedPlatforms } = filterForScope(
+    context,
+    scope,
+  );
   const revenue = metricDelta(current, comparison, "gross_sales");
   const roas = metricDelta(current, comparison, "roas");
 
+  // Rank platforms by rupee impact, not %, so a small platform's big swing
+  // doesn't outrank a large platform's real loss.
+  const platformRows = selectedPlatforms
+    .map((platformId) => {
+      const delta = metricDelta(
+        current.filter((r) => r.platformId === platformId),
+        comparison.filter((r) => r.platformId === platformId),
+        "gross_sales",
+      );
+      return { platformId, delta, impact: delta.cur - delta.prev };
+    })
+    .sort((a, b) => a.impact - b.impact);
+  const risk = platformRows[0]?.impact < 0 ? platformRows[0] : undefined;
+  const growth =
+    platformRows.length > 1 && platformRows[platformRows.length - 1].impact > 0
+      ? platformRows[platformRows.length - 1]
+      : undefined;
+  const nameOf = (id: PlatformId) => PLATFORM_BY_ID[id]?.name ?? id;
+  const rupees = (value: number) => formatMetricValue("gross_sales", Math.abs(value));
+
+  const lead = risk
+    ? `Biggest risk: ${nameOf(risk.platformId)} Gross Sales fell ${formatPct(risk.delta.pct)} (${rupees(risk.impact)} lost), the largest drop of any platform.`
+    : `No platform lost Gross Sales in ${scope.scopeLabel} this period.`;
+
+  return {
+    message: {
+      id: createMessageId(),
+      kind: "insight",
+      title: "Business summary",
+      summary: lead,
+      sections: prependAnalysisSections(context, scope, [
+        insightSection("major_changes", "Overall", [
+          `Gross Sales ${formatPct(revenue.pct)} and ROAS ${formatPct(roas.pct)} vs the comparison period.`,
+        ]),
+        insightSection(
+          "risks",
+          "Risks",
+          platformRows
+            .filter((row) => row.impact < 0)
+            .slice(0, 3)
+            .map(
+              (row) =>
+                `${nameOf(row.platformId)}: ${formatPct(row.delta.pct)} (${rupees(row.impact)} lost)`,
+            ),
+        ),
+        insightSection(
+          "growth",
+          "Growth",
+          growth
+            ? [
+                `${nameOf(growth.platformId)}: ${formatPct(growth.delta.pct)} (${rupees(growth.impact)} gained)`,
+              ]
+            : ["No platform grew Gross Sales this period."],
+        ),
+      ]),
+      handoffs: risk
+        ? [
+            {
+              label: `Why did ${nameOf(risk.platformId)} drop?`,
+              prompt: "Why?",
+            },
+          ]
+        : [],
+      createdAt: Date.now(),
+    },
+    riskPlatformId: risk?.platformId,
+  };
+}
+
+function executiveSummaryTurn(
+  userMessage: AskAriaMessage,
+  context: AskAriaFullContext,
+  scope: ResolvedQueryScope,
+  metricId: MetricId,
+): { messages: AskAriaMessage[]; memory: AskAriaInvestigationMemory } {
+  const summary = buildExecutiveSummary(context, scope);
+  const focusPlatform = summary.riskPlatformId ?? memoryPlatformFromScope(scope, context);
+  return {
+    messages: [userMessage, summary.message],
+    memory: {
+      topic: "metric_change",
+      metricId,
+      platformId: focusPlatform,
+      lastPlatform: focusPlatform,
+      lastTopic: "executive_summary",
+    },
+  };
+}
+
+function buildTopProductsMessage(
+  context: AskAriaFullContext,
+  metricId: MetricId,
+  scope: ResolvedQueryScope,
+  text: string,
+): AskAriaMessage {
+  const { current } = filterForScope(context, scope);
+  const worst = /\b(worst|bottom|lowest)\b/i.test(text);
+  const ranked = rankProducts(current).sort((a, b) =>
+    worst ? a.revenue - b.revenue : b.revenue - a.revenue,
+  );
+  const rows = ranked.slice(0, 5);
+  const label = worst ? "Lowest-selling products" : "Top products";
+  const lines = rows.map((row, index) => {
+    const name = PRODUCT_BY_ID[row.productId]?.name ?? row.productId;
+    const platform = PLATFORM_BY_ID[row.platformId]?.name ?? row.platformId;
+    return `${index + 1}. ${name} (${platform}): ${formatMetricValue("gross_sales", row.revenue)} · ROAS ${row.roas.toFixed(2)}`;
+  });
+  const first = rows[0];
   return {
     id: createMessageId(),
     kind: "insight",
-    title: "Business summary",
-    summary: `Executive view for ${scope.scopeLabel}.`,
+    title: `${label} by Gross Sales — ${scope.scopeLabel}`,
+    summary: first
+      ? `${PRODUCT_BY_ID[first.productId]?.name ?? first.productId} ${worst ? "sold the least" : "sold the most"}: ${formatMetricValue("gross_sales", first.revenue)} this period.`
+      : "No product sales in the current filters.",
     sections: prependAnalysisSections(context, scope, [
-      insightSection("major_changes", "Major changes", [
-        `Gross Sales ${formatPct(revenue.pct)} vs comparison period.`,
-        `ROAS ${formatPct(roas.pct)} vs comparison period.`,
-      ]),
-      insightSection("risks", "Risks", [
-        "Platforms with simultaneous order and conversion pressure.",
-        "Accounts with declining revenue concentration in top SKUs.",
-      ]),
-      insightSection("growth", "Growth", [
-        "Platforms with positive revenue and stable ROAS in the current window.",
-      ]),
+      insightSection("contributors", label, lines),
     ]),
+    handoffs: first
+      ? [
+          {
+            label: "View product analysis",
+            productId: first.productId,
+            platformId: first.platformId,
+          },
+        ]
+      : [],
     createdAt: Date.now(),
   };
 }
@@ -1557,13 +1700,16 @@ export function processAskAriaMessage(
   }
 
   if (intent === "brand_analysis") {
+    const brands = buildBrandAnalysisMessage(context, role, scope);
     return {
-      messages: [userMessage, buildBrandAnalysisMessage(context, role, scope)],
+      messages: [userMessage, brands.message],
       memory: {
         topic: "metric_change",
         lastTopic: "brand_analysis",
         platformId: scopedPlatform,
         lastPlatform: scopedPlatform,
+        lastBrandId: brands.weakest?.brandId,
+        lastBrandName: brands.weakest?.brandName,
       },
     };
   }
@@ -1755,12 +1901,45 @@ export function processAskAriaMessage(
   }
 
   if (intent === "root_cause") {
+    // A bare "why?" explains whatever the previous answer pointed at.
+    const isBareWhy = /^\s*why\b[\s?.!]*(is that|did that happen|so)?[\s?.!]*$/i.test(
+      trimmed,
+    );
+    if (isBareWhy && memory.lastTopic === "brand_analysis" && memory.lastBrandId) {
+      const brandContext = { ...context, brandId: memory.lastBrandId };
+      const insight = buildInsightMessage(
+        brandContext,
+        "gross_sales",
+        memory,
+        role,
+        scope,
+      );
+      const message =
+        insight.message.kind === "insight"
+          ? { ...insight.message, title: `${insight.message.title} — ${memory.lastBrandName}` }
+          : insight.message;
+      return {
+        messages: [userMessage, message],
+        memory: {
+          ...insight.memory,
+          lastBrandId: memory.lastBrandId,
+          lastBrandName: memory.lastBrandName,
+        },
+      };
+    }
+    const followScope =
+      isBareWhy &&
+      memory.lastTopic === "executive_summary" &&
+      memory.lastPlatform &&
+      memory.lastPlatform !== "all"
+        ? singlePlatformScope(memory.lastPlatform)
+        : scope;
     const insight = buildInsightMessage(
       context,
       metricId,
       memory,
       role,
-      scope,
+      followScope,
     );
     return {
       messages: [userMessage, insight.message],
@@ -1768,17 +1947,24 @@ export function processAskAriaMessage(
     };
   }
 
+  if (intent === "product_ranking") {
+    return {
+      messages: [userMessage, buildTopProductsMessage(context, metricId, scope, trimmed)],
+      memory: {
+        ...memory,
+        topic: "products",
+        metricId,
+        lastMetric: metricId,
+        lastTopic: "product_ranking",
+        platformId: scopedPlatform,
+        lastPlatform: scopedPlatform,
+      },
+    };
+  }
+
   if (intent === "executive_summary") {
     if (role === "CXO") {
-      return {
-        messages: [userMessage, buildExecutiveSummary(context, scope)],
-        memory: {
-          topic: "metric_change",
-          metricId,
-          platformId: scopedPlatform,
-          lastTopic: "executive_summary",
-        },
-      };
+      return executiveSummaryTurn(userMessage, context, scope, metricId);
     }
     if (role === "KAM") {
       return {
@@ -1811,15 +1997,7 @@ export function processAskAriaMessage(
 
   if (intent === "general_performance") {
     if (role === "CXO") {
-      return {
-        messages: [userMessage, buildExecutiveSummary(context, scope)],
-        memory: {
-          topic: "metric_change",
-          metricId,
-          platformId: scopedPlatform,
-          lastTopic: "general_performance",
-        },
-      };
+      return executiveSummaryTurn(userMessage, context, scope, metricId);
     }
     const insight = buildInsightMessage(
       context,

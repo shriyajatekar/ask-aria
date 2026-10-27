@@ -234,6 +234,7 @@ export type AskAriaTemporalWindow =
   | "last_7_days"
   | "last_30_days"
   | "previous_week"
+  | "weekend"
   | "decline_onset";
 
 /** Latest metric/platform/period investigation — inherited on follow-ups in the same thread. */
@@ -261,6 +262,9 @@ export interface AskAriaInvestigationMemory {
   lastPlatform?: DashboardPlatform;
   lastTopic?: string;
   temporalWindow?: AskAriaTemporalWindow;
+  /** Brand the last answer pointed at, so "why?" can explain it. */
+  lastBrandId?: string;
+  lastBrandName?: string;
   pendingActionDraft?: AskAriaActionDraft;
   activeAnalysisContext?: AskAriaActiveAnalysisContext;
 }

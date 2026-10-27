@@ -118,6 +118,10 @@ function parseNumericBid(text: string): number | undefined {
   const targetBid = text.match(/target\s+bid\s+(?:is|to)\s+₹?\s*(\d+(?:\.\d+)?)/i);
   if (targetBid) return Number(targetBid[1]);
 
+  // "Increase bid on Amazon campaign Hydra Glow to 25"
+  const bidThenTo = text.match(/\bbid\b.*?\bto\s+₹?\s*(\d+(?:\.\d+)?)\s*$/i);
+  if (bidThenTo) return Number(bidThenTo[1]);
+
   return undefined;
 }
 
@@ -165,6 +169,11 @@ export function isClientUpdateRequest(text: string): boolean {
   );
 }
 
+/** "Email this to my team", "mail it to leadership" — email used as a verb. */
+function isEmailVerbRequest(text: string): boolean {
+  return /^\s*(e-?mail|mail|share)\s+(this|it|that|the\b)/i.test(text);
+}
+
 export function looksLikeActionSpecification(text: string): boolean {
   const lower = text.toLowerCase();
   return (
@@ -182,6 +191,7 @@ export function looksLikeActionSpecification(text: string): boolean {
         lower.includes("kam") ||
         lower.includes("team"))) ||
     (lower.includes("draft") && lower.includes("email")) ||
+    isEmailVerbRequest(text) ||
     isClientUpdateRequest(text) ||
     lower.includes("confirm send") ||
     /\bset\s+.+\s+bid\b/i.test(text)
@@ -337,12 +347,13 @@ export function parseActionRequest(
     (lower.includes("declining") && lower.includes("product")) ||
     (lower.includes("underperform") && lower.includes("product"));
   const isEmailAction =
-    (lower.includes("send") || lower.includes("draft")) &&
-    (lower.includes("email") ||
-      lower.includes("kam") ||
-      lower.includes("team") ||
-      lower.includes("leadership") ||
-      /@/.test(text));
+    isEmailVerbRequest(text) ||
+    ((lower.includes("send") || lower.includes("draft")) &&
+      (lower.includes("email") ||
+        lower.includes("kam") ||
+        lower.includes("team") ||
+        lower.includes("leadership") ||
+        /@/.test(text)));
   const isConfirmSend =
     lower.includes("confirm send") ||
     lower.includes("send the prepared email") ||
