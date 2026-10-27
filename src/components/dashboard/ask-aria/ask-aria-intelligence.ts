@@ -728,7 +728,7 @@ function buildProductsFollowUp(
     id: createMessageId(),
     kind: "insight",
     title: formatted.title,
-    summary: `${formatted.summary} Scope: ${scope.scopeLabel}.`,
+    summary: formatted.summary,
     sections: prependAnalysisSections(context, scope, [
       insightSection("contributors", sectionHeading, formatted.lines),
     ]),

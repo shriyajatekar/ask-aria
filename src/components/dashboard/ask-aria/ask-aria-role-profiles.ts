@@ -549,7 +549,7 @@ export function formatProductsFollowUp(
     : undefined;
   // Lead with the top product and its number, not a description of the list.
   const topLead = first
-    ? `${firstName} moved most: ${valueLabel} ${formatPct(first.pct)} in ${scopeLabel}.`
+    ? `${firstName} moved most: ${valueLabel} ${formatPct(first.pct)} on ${scopeLabel}.`
     : `No product-level change found in ${scopeLabel}.`;
   const revenueWithinInvestigationSummary =
     rankingByRevenue && first
