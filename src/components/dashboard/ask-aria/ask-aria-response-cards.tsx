@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 
-import { ChevronDown, ChevronRight, Loader2, ThumbsDown, ThumbsUp } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, LocateFixed, ThumbsDown, ThumbsUp } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { PLATFORM_BY_ID } from "@/data/platforms";
 import { useAuth } from "@/contexts/auth-provider";
+import { useDashboard } from "@/contexts/dashboard-context";
 import { cn } from "@/lib/cn";
 import {
   FEEDBACK_REASONS,
@@ -33,6 +34,7 @@ import {
   type NormalizedAskAriaInsightSection,
 } from "./ask-aria-insight-sections";
 import { useAskAria } from "./ask-aria-context";
+import { evidenceForMessage } from "./ask-aria-evidence";
 import { PRINCIPLE_LABELS, principlesForMessage } from "./ask-aria-principles";
 import type {
   AskAriaActionDraft,
@@ -95,7 +97,12 @@ export function AskAriaMessageList({
             onProactivePrompt={onProactivePrompt}
             onClarificationChoice={onClarificationChoice}
           />
-          {RATEABLE_KINDS.has(message.kind) ? <FeedbackBar message={message} /> : null}
+          {RATEABLE_KINDS.has(message.kind) ? (
+            <div className="flex flex-wrap items-center justify-between gap-x-3">
+              <FeedbackBar message={message} />
+              <ShowOnDashboardButton message={message} />
+            </div>
+          ) : null}
           {showDesignNotes ? <DesignNotes message={message} /> : null}
         </div>
       ))}
@@ -114,6 +121,31 @@ const RATEABLE_KINDS = new Set<AskAriaMessage["kind"]>([
 
 function messageTitle(message: AskAriaMessage): string {
   return "title" in message && typeof message.title === "string" ? message.title : message.kind;
+}
+
+/**
+ * "Show on dashboard": switch the chart to the answer's metric, highlight its
+ * platform, and scroll there, so the user can check the answer themselves.
+ */
+function ShowOnDashboardButton({ message }: { message: AskAriaMessage }) {
+  const { showEvidence } = useDashboard();
+  const { closePanel } = useAskAria();
+  const evidence = evidenceForMessage(message);
+  if (!evidence) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        showEvidence(evidence);
+        // On phones the chat covers the dashboard.
+        if (window.matchMedia?.("(max-width: 767px)").matches) closePanel();
+      }}
+      className="mt-1 inline-flex min-h-8 items-center gap-1 rounded-md px-1.5 type-small text-accent-interactive hover:bg-accent-subtle"
+    >
+      <LocateFixed className="h-3.5 w-3.5" aria-hidden />
+      Show on dashboard
+    </button>
+  );
 }
 
 /** "Was this helpful?" with a one-tap reason when it wasn't. Stored in this browser. */

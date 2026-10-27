@@ -66,12 +66,14 @@ export function PlatformPerformanceTable() {
           <tbody>
             {sorted.map((row) => {
               const selected = dashboard.platform === row.platformId;
+              const highlighted = dashboard.evidence?.platformId === row.platformId;
               return (
                 <tr
                   key={row.platformId}
                   className={cn(
                     "cursor-pointer border-b border-border-subtle hover:bg-surface-hover",
                     selected && "bg-background-tertiary",
+                    highlighted && "bg-accent-subtle",
                   )}
                   onClick={() => dashboard.setPlatform(row.platformId as PlatformId)}
                 >

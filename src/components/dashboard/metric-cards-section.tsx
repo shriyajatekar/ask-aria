@@ -30,6 +30,7 @@ export function MetricCardsSection({
     toggleTrendMetric,
     consolidatedChartMetric,
     setConsolidatedChartMetric,
+    evidence,
   } = useDashboard();
   const { metricComparisons } = useDashboardAnalytics();
   const { runProactivePrompt } = useAskAria();
@@ -104,6 +105,7 @@ export function MetricCardsSection({
               }
               onToggleTrend={() => handleMetricCardClick(metricId)}
               onDeepDive={() => deepDive(definition.name)}
+              highlighted={evidence?.metricId === metricId}
               compact={isWorkspace}
             />
           );
@@ -156,6 +158,7 @@ function MetricCard({
   selectedForTrend,
   onToggleTrend,
   onDeepDive,
+  highlighted = false,
   compact = false,
 }: {
   metricId: MetricId;
@@ -167,6 +170,8 @@ function MetricCard({
   selectedForTrend: boolean;
   onToggleTrend: () => void;
   onDeepDive: () => void;
+  /** Pointed at by an Aria answer ("Show on dashboard"). */
+  highlighted?: boolean;
   compact?: boolean;
 }) {
   const isPositive = direction === "up";
@@ -187,6 +192,7 @@ function MetricCard({
         selectedForTrend
           ? "border-accent-interactive bg-accent-subtle ring-1 ring-accent-interactive/20"
           : "border-border bg-white",
+        highlighted && "ring-2 ring-accent-interactive ring-offset-1",
       )}
     >
       <p className="truncate type-label text-text-secondary">{name}</p>

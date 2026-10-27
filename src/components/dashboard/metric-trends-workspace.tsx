@@ -17,6 +17,7 @@ export function MetricTrendsWorkspace() {
   if (isConsolidated) {
     return (
       <section
+        id="metric-trends"
         aria-labelledby="metric-trends-heading"
         className="rounded-lg border border-border bg-white shadow-sm min-w-0 max-w-full"
       >
@@ -51,6 +52,7 @@ export function MetricTrendsWorkspace() {
 function IndividualMetricTrendsWorkspace() {
   return (
     <section
+      id="metric-trends"
       aria-labelledby="metric-trends-heading-individual"
       className="rounded-lg border border-border bg-white shadow-sm min-w-0 max-w-full"
     >

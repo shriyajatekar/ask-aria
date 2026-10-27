@@ -791,6 +791,7 @@ function useConsolidatedPlatformMetricRows() {
 export function ConsolidatedPlatformChart() {
   const { rows, metricId, metricName, isComparison } =
     useConsolidatedPlatformMetricRows();
+  const { evidence } = useDashboard();
   const containerRef = useRef<HTMLDivElement>(null);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(
@@ -867,7 +868,9 @@ export function ConsolidatedPlatformChart() {
 
               // Neutral bars; the hovered platform turns copper.
               const platformColor =
-                hoveredIndex === index ? CHART_ACCENT : platformChartColor(row.platformId);
+                hoveredIndex === index || evidence?.platformId === row.platformId
+                  ? CHART_ACCENT
+                  : platformChartColor(row.platformId);
 
               if (!isComparison) {
                 const barX = groupCenter - barWidth / 2;
