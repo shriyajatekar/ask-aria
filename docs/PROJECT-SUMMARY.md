@@ -5,6 +5,7 @@
 - Live demo: https://ask-aria-dun.vercel.app/
 - Case study: https://shriyajatekar2026.framer.ai/ask-aria
 - Interview script: [GOLDEN-PATH.md](GOLDEN-PATH.md)
+- Usability test kit (not yet run): [USABILITY-TEST-KIT.md](USABILITY-TEST-KIT.md)
 
 ---
 
@@ -52,6 +53,11 @@ The design decisions:
   - follow-ups that keep context
   - report, spreadsheet and email drafts with confirm-before-send
   - monitors (simulated)
+- **Did it work?** Confirmed bid, budget and keyword changes get a before/after check (7 days before vs up to 7 after), with a verdict and a caveat that it isn't proof.
+- **Answer feedback**: thumbs up/down with a reason under every analysis answer, a log of questions Aria couldn't answer, and "Show feedback" to review both.
+- **Show on dashboard**: every analysis answer can switch the chart to its metric and highlight its platform, so the user can check it.
+- **Data freshness**: each platform reports on its own delay; periods end on the last day every platform has reported, and answers flag partial data.
+- **Hinglish**: common Hinglish questions ("Amazon ka ROAS kyun gira?") are understood, with "I read this as: …".
 - **One-click deep dive** from any KPI card, alert or the bell: what happened → why → where → has it happened before → what to do, in one card with report, task and share actions.
 - **Root-cause analysis**: a driver tree (Gross Sales = sessions × conversion × sales per order; ROAS = sales per click ÷ cost per click) that splits a change exactly between drivers, traces it to platforms and products, lists what was ruled out, and states its confidence. Exportable as a report.
 - **Situation alerts** in the notification bell and the chat: material drops, what happened the last time something similar happened in the data (and how it recovered), and a suggested next step. When there is no precedent, Aria says so.
@@ -61,7 +67,7 @@ The design decisions:
 - A **Design notes** toggle that labels each answer with the principles it shows, so a reviewer can check the design against the live demo.
 - A **graphite and copper** visual system: IBM Plex type, WCAG AA text contrast everywhere, chart colours at 3:1, calm motion that turns off for reduced-motion users.
 - A public **design system** page.
-- **89 automated tests** covering question routing, follow-up context, the "say when uncertain" behaviour, the source line on every answer, answer wording, the golden path, the Google demo-only switch, the root-cause maths (parts add up to the whole), alerts, bid risk, team actions, the AI fallback and its rate limits, and colour contrast.
+- **109 automated tests** covering question routing, follow-up context, the "say when uncertain" behaviour, the source line on every answer, answer wording, the golden path, the Google demo-only switch, the root-cause maths (parts add up to the whole), alerts, bid risk, team actions, the AI fallback and its rate limits, and colour contrast.
 
 ## 5. How it works (plain language)
 
@@ -78,6 +84,10 @@ The design decisions:
 - **Answers are not AI-generated.** They are calculated and templated from synthetic data. An optional OpenAI model only maps unusual phrasing onto Aria's question types. Its usage limits are kept in server memory per running instance, so the real spending ceiling must be set as a monthly budget in the OpenAI project. The default model name (`gpt-4o-mini`) should be checked against OpenAI's current list.
 - **Root cause is arithmetic, not causation.** The driver tree shows which parts of the formula moved, not why customers behaved differently. Stock and Buy Box are shown as "also moved" signals, not proven causes.
 - **Alerts and past playbooks come from about 11 weeks of synthetic data,** so precedents are few and sometimes much smaller than today's drop (Aria says so).
+- **"Did it work?" is a before/after comparison, not proof**, and the synthetic data doesn't react to actions, so in this demo it shows how the check works. The built-in example is labelled as one.
+- **Feedback and tracked actions live in the browser** (per demo user); nothing is collected centrally.
+- **Reporting delays are illustrative**, not measured from real marketplaces.
+- **Hinglish uses a fixed vocabulary** of common question words; other phrasing needs the optional AI fallback. Not yet tested with native speakers.
 - **Bid checks use daily data only.** There is no hourly data, so Aria makes no claims about late-night traffic, and no real current bids are stored; it compares against the actual cost per click.
 - **Synthetic data, about 11 weeks, rolling.** The timeline always ends yesterday so the dashboard shows the real last 30 days, but the numbers are a fixed synthetic story replayed on current dates (each day keeps its original random seed); only weekends follow the real calendar. Patterns were designed for the demo, and Aria says when the history is too short to judge.
 - **Never tested with real users.** There are no usage numbers or research results from this demo.

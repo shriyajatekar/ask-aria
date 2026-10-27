@@ -2504,7 +2504,7 @@ function routeAskAriaMessage(
           id: createMessageId(),
           kind: "feedback_log",
           summary: total
-            ? `${f.helpful} of ${total} rated answer${total === 1 ? "" : "s"} were helpful. Feedback is kept in this browser only.`
+            ? `${f.helpful} of ${total} rated answer${total === 1 ? " was" : "s were"} helpful. Feedback is kept in this browser only.`
             : "No answers rated yet. Use the thumbs under any answer; feedback is kept in this browser only.",
           reasons: f.reasons,
           unanswered: f.unanswered,
