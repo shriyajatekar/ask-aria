@@ -12,7 +12,7 @@ import {
 } from "react";
 
 import { useAuth } from "@/contexts/auth-provider";
-import { useDashboard } from "@/contexts/dashboard-context";
+import { TREND_METRIC_LIMIT, useDashboard } from "@/contexts/dashboard-context";
 
 import {
   actionConfirmedMessage,
@@ -28,6 +28,7 @@ import {
   processAskAriaMessage,
 } from "./ask-aria-intelligence";
 import { classifyIntent } from "./ask-aria-intent";
+import { evidenceToFollow } from "./ask-aria-evidence";
 import { translateHinglish } from "./ask-aria-hinglish";
 import { understandWithAi } from "./ask-aria-ai-client";
 import { METRIC_BY_ID } from "@/data/metrics";
@@ -126,6 +127,10 @@ interface AskAriaContextValue {
   conversationAccessMessage: string | null;
   toolsSheetOpen: boolean;
   openToolsSheet: (focus?: DemoWorkspaceTool) => void;
+  /** Simulated "Connect Google" flow shown in demo mode. */
+  demoConnectOpen: boolean;
+  closeDemoConnect: () => void;
+  completeDemoConnect: () => void;
   closeToolsSheet: () => void;
   toolsSheetFocus: DemoWorkspaceTool | null;
   setToolsConnectedTick: (value: number | ((current: number) => number)) => void;
@@ -186,6 +191,7 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
   const [toolsSheetFocus, setToolsSheetFocus] =
     useState<DemoWorkspaceTool | null>(null);
   const [toolsConnectedTick, setToolsConnectedTick] = useState(0);
+  const [demoConnectOpen, setDemoConnectOpen] = useState(false);
   const [googleOAuthConfigured, setGoogleOAuthConfigured] = useState(false);
   const [googleOAuthConnected, setGoogleOAuthConnected] = useState(false);
   const [googleOAuthDocsConnected, setGoogleOAuthDocsConnected] =
@@ -509,6 +515,26 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
     threadConversationId,
   ]);
 
+  // When a question names one platform, the dashboard moves to that
+  // platform's page with the answer's metric in the chart.
+  const followAnswer = useCallback(
+    (question: string, messages: AskAriaMessage[]) => {
+      const evidence = evidenceToFollow(translateHinglish(question) ?? question, messages);
+      if (!evidence?.platformId) return;
+      dashboard.setPlatform(evidence.platformId);
+      if (evidence.metricId) {
+        dashboard.addSelectedMetric(evidence.metricId);
+        dashboard.setChartMetrics(
+          [evidence.metricId, ...dashboard.chartMetrics.filter((m) => m !== evidence.metricId)].slice(
+            0,
+            TREND_METRIC_LIMIT,
+          ),
+        );
+      }
+    },
+    [dashboard],
+  );
+
   const submitQuestion = useCallback(async () => {
     const text = inputValue.trim();
     if (!text) return;
@@ -573,10 +599,12 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
       text,
       targetConversationId,
     );
+    followAnswer(text, result.messages);
     setInputValue("");
     setIsSubmitting(false);
   }, [
     appendMessages,
+    followAnswer,
     userId,
     conversations,
     ensureSubmitConversationId,
@@ -621,12 +649,14 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
         prompt,
         targetConversationId,
       );
+      followAnswer(prompt, result.messages);
       setInputValue("");
       // Prompts started outside the panel (bell, KPI cards) must show the answer.
       setOpen(true);
     },
     [
       appendMessages,
+      followAnswer,
       userId,
       conversations,
       ensureSubmitConversationId,
@@ -1188,10 +1218,8 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
           });
           return;
         }
-        if (!userId) return;
-        connectDemoWorkspace("google_workspace", userId);
-        setToolsConnectedTick((value) => value + 1);
-        openToolsSheet("google_workspace");
+        // Demo mode: walk through a simulated Google connect flow.
+        setDemoConnectOpen(true);
         return;
       }
       if (choice.followUpText.trim()) {
@@ -1207,6 +1235,31 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
       userId,
     ],
   );
+
+  const closeDemoConnect = useCallback(() => setDemoConnectOpen(false), []);
+
+  // After "Allow" in the simulated flow: mark the demo workspace connected and
+  // continue with the action that was waiting for it.
+  const completeDemoConnect = useCallback(() => {
+    setDemoConnectOpen(false);
+    if (!userId) return;
+    connectDemoWorkspace("google_workspace", userId);
+    setToolsConnectedTick((value) => value + 1);
+    const memory = activeConversation?.memory ?? {};
+    const draft = memory.pendingActionDraft;
+    const next: AskAriaMessage[] = [
+      {
+        id: createMessageId(),
+        kind: "assistant_text",
+        text: "Google Workspace connected (demo). No real Google account was used.",
+        createdAt: Date.now(),
+      },
+    ];
+    if (draft) {
+      next.push({ id: createMessageId(), kind: "action_preview", draft, createdAt: Date.now() });
+    }
+    appendMessages(next, memory, undefined, activeConversationId ?? undefined);
+  }, [activeConversation?.memory, activeConversationId, appendMessages, userId]);
 
   const applyHandoff = useCallback(
     (handoff: AskAriaHandoff) => {
@@ -1383,6 +1436,9 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
       closeToolsSheet,
       toolsSheetFocus,
       setToolsConnectedTick,
+      demoConnectOpen,
+      closeDemoConnect,
+      completeDemoConnect,
       googleOAuthConfigured,
       googleOAuthConnected,
       googleOAuthDocsConnected,
@@ -1423,6 +1479,9 @@ export function AskAriaProvider({ children }: { children: ReactNode }) {
       openToolsSheet,
       closeToolsSheet,
       toolsSheetFocus,
+      demoConnectOpen,
+      closeDemoConnect,
+      completeDemoConnect,
       googleOAuthConfigured,
       googleOAuthConnected,
       googleOAuthDocsConnected,

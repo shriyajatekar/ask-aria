@@ -9,6 +9,7 @@ import { cn } from "@/lib/cn";
 import { AskAriaActionHistory } from "./ask-aria-action-history";
 import { AskAriaConnectedToolsLink } from "./ask-aria-connected-tools";
 import { AskAriaToolsSheet } from "./ask-aria-tools-sheet";
+import { AskAriaDemoConnect } from "./ask-aria-demo-connect";
 import { useAskAria } from "./ask-aria-context";
 import { AskAriaConversationHistory } from "./ask-aria-conversation-history";
 import { AskAriaInput } from "./ask-aria-input";
@@ -261,6 +262,7 @@ export function AskAriaPanel() {
           <AskAriaInput />
         </div>
         <AskAriaToolsSheet />
+        <AskAriaDemoConnect />
       </aside>
     </>
   );

@@ -55,3 +55,23 @@ export function evidenceForMessage(message: AskAriaMessage): EvidenceHighlight |
   }
   return evidence.metricId || evidence.platformId ? evidence : null;
 }
+
+/**
+ * Auto-follow: when the question names exactly one platform ("…on Amazon")
+ * and Aria answered with an analysis about it, the dashboard should move to
+ * that platform's page with the answer's metric. Returns what to show, or
+ * null to leave the dashboard where it is.
+ */
+export function evidenceToFollow(
+  question: string,
+  replies: AskAriaMessage[],
+): EvidenceHighlight | null {
+  const lower = question.toLowerCase();
+  const named = PLATFORMS.filter((p) => lower.includes(p.name.toLowerCase()));
+  if (named.length !== 1) return null;
+  for (const reply of replies) {
+    const evidence = evidenceForMessage(reply);
+    if (evidence?.platformId === named[0].id) return evidence;
+  }
+  return null;
+}

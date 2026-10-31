@@ -19,7 +19,7 @@ The numbers below come from the synthetic dataset: the last 30 complete days (en
 | 1 | Why did ROAS drop on Amazon? | "ROAS on Amazon fell 9.7% to 3.15 vs the comparison period." | **Leads with the insight**; the **Source** line names the data, scope and both periods |
 | 2 | Run a root-cause analysis (or tap the button) | "Cost per click drives 74% of the ROAS drop on Amazon: it rose 7.8% (₹53.64 → ₹57.83)." | **Driver tree**: ROAS = sales per click ÷ cost per click, a waterfall of what explains the drop, the products where it happened, what was ruled out, and a confidence level. Follow-up kept Amazon and ROAS |
 | 3 | Has this happened before? | A note first: the dataset covers about 11 weeks, too short to call a pattern | **Says when uncertain** instead of inventing history |
-| 4 | Create an RCA report | A preview of "Root-cause analysis — ROAS (Amazon)" with a **Confirm** button | **Insight → action**, **confirm before acting**. Confirming shows "Demo only: no real document was created." |
+| 4 | Create an RCA report | The first time: **Connect Google Workspace** opens a 3-step demo connect (account → permissions → connected; no real Google account). Then a preview of "Root-cause analysis — ROAS (Amazon)" with a **Confirm** button | **Insight → action**, **confirm before acting**. Confirming shows "Demo only: no real document was created." |
 
 ## Key Account Manager (Yuga): from brands to a client email
 

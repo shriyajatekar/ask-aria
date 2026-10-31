@@ -5,6 +5,7 @@ import type {
   AskAriaInvestigationMemory,
   AskAriaMessage,
 } from "@/components/dashboard/ask-aria/ask-aria-types";
+import type { WorkspaceConnectionState } from "@/components/dashboard/ask-aria/ask-aria-tool-mapping";
 import type { UserRole } from "@/lib/auth/types";
 import { getRegistryPlatformIds } from "@/lib/dashboard/consolidated-platforms";
 import { getDefaultDashboardRanges } from "@/lib/dashboard/date-ranges";
@@ -32,6 +33,14 @@ export function makeContext(
   };
 }
 
+/** Demo workspace already connected, as after the simulated Connect Google step. */
+export const DEMO_CONNECTED: WorkspaceConnectionState = {
+  googleOAuthConfigured: false,
+  googleOAuthConnected: false,
+  googleDemoConnected: true,
+  microsoftDemoConnected: false,
+};
+
 export interface Turn {
   text: string;
   intent: string;
@@ -44,12 +53,13 @@ export function converse(
   role: UserRole,
   texts: string[],
   context: AskAriaFullContext = makeContext({ role }),
+  connection: WorkspaceConnectionState = DEMO_CONNECTED,
 ): Turn[] {
   let memory: AskAriaInvestigationMemory = {};
   let history: AskAriaMessage[] = [];
   return texts.map((text) => {
     const intent = classifyIntent(text, memory, context);
-    const result = processAskAriaMessage(text, context, memory, role, undefined, {
+    const result = processAskAriaMessage(text, context, memory, role, connection, {
       recentMessages: history,
     });
     history = [...history, ...result.messages];

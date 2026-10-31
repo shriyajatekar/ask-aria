@@ -56,9 +56,12 @@ export function isWorkspaceToolSatisfiedForAction(
   connection: WorkspaceConnectionState,
 ): boolean {
   if (!actionRequiresWorkspaceTool(type)) return true;
-  // Public demo (live Google off): actions run as labelled simulations, so
-  // there is nothing for the visitor to connect.
-  if (!connection.googleOAuthConfigured) return true;
+  // Public demo (live Google off): the visitor connects a simulated Google
+  // account once (a demo flow, no real account), then actions run as
+  // labelled simulations.
+  if (!connection.googleOAuthConfigured) {
+    return connection.googleDemoConnected || connection.microsoftDemoConnected;
+  }
   const destination = destinationForAction(type, connection);
   const needsGoogle =
     destination.includes("Google") || destination === "Gmail";

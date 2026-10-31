@@ -42,7 +42,7 @@ describe("Google demo-only mode", () => {
     expect(result.message).not.toMatch(/\(demo\).*\(demo\)/);
   });
 
-  it("lets visitors run simulated actions without connecting anything", () => {
+  it("asks visitors to run the simulated connect step first, then allows actions", () => {
     const demo = {
       googleOAuthConfigured: false,
       googleOAuthConnected: false,
@@ -50,7 +50,8 @@ describe("Google demo-only mode", () => {
       microsoftDemoConnected: false,
     };
     for (const type of ["generate_report", "create_spreadsheet", "send_email"] as const) {
-      expect(isWorkspaceToolSatisfiedForAction(type, demo)).toBe(true);
+      expect(isWorkspaceToolSatisfiedForAction(type, demo)).toBe(false);
+      expect(isWorkspaceToolSatisfiedForAction(type, { ...demo, googleDemoConnected: true })).toBe(true);
     }
   });
 });
