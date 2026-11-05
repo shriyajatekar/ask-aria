@@ -25,7 +25,7 @@ The data wasn't missing. The step from data to an answer was.
 
 ## 3. My role and decisions
 
-Ask Aria started as a project assigned to me at Infytrix, with only a few pointers. I defined the experience and extended the concept. It stayed at the idea stage there and was never built. Afterwards I rebuilt it on my own as this coded demo, in Cursor with help from ChatGPT, because I no longer had the original screens.
+Ask Aria started as an assigned project with only a few pointers. I defined the experience and extended the concept, and designed the screens at the foundation stage. It was never built at that stage. Afterwards I built this prototype on my own to show the concept, in Cursor with help from ChatGPT, because I no longer had the original screens.
 
 The design decisions:
 
